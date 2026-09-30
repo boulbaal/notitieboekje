@@ -187,7 +187,7 @@ function laadImport() {
 const ab = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
 const NU = Date.UTC(2026, 8, 30, 12, 0);
 
-test('MEMOBK2 (synthetic): every record read, trimmed, empty skipped, timestamps right', () => {
+test('MEMOBK2 (synthetic): live notes read, deleted (positive A) skipped, trimmed, timestamps right', () => {
   const IO = laadImport();
   const r = IO.lees(ab(maakMemo(VOORBEELD)), '2026-09-30 15.16.40.500-3F2504E0.memo', 0, NU);
   expect(r.soort).toBe('memo');
@@ -199,16 +199,17 @@ test('MEMOBK2 (synthetic): every record read, trimmed, empty skipped, timestamps
     'مرحبا بالعالم\nسطر ثان',
     'Boodschappen\nmelk\nbrood',
     'Rare datum, wel een wijzigtijd',
-    'Oud briefje van lang geleden',
   ]);
+  expect(r.verwijderd).toBe(2);
   const n = r.notes;
   expect([n[0].created, n[0].updated]).toEqual([T.boodschappen, T.boodschappen]);    // C = 0
   expect([n[1].created, n[1].updated]).toEqual([T.tandarts, T.tandartsGewijzigd]);  // met uuid en C
   expect([n[6].created, n[6].updated]).toEqual([T.raar, T.raar]);                   // onzin-A: terug op C
-  expect([n[7].created, n[7].updated]).toEqual([T.oud, T.oud]);                     // positieve A
   // onzin-A en geen C: nu
   const r2 = IO.lees(ab(maakMemo([{ text: 'x', a: -5000 }])), 'a.memo', 0, NU);
   expect(r2.notes[0].created).toBe(NU);
+  // A = 0 telt ook als verwijderd; eigen JSON en tekst hebben nooit verwijderde
+  expect(IO.lees(ab(maakMemo([{ text: 'nul', a: 0 }])), 'a.memo', 0, NU)).toMatchObject({ notes: [], verwijderd: 1 });
 });
 
 test('MEMOBK2: a damaged file is refused as a whole', () => {

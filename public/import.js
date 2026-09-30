@@ -9,9 +9,12 @@
  *   3. de MEMOBK2-back-up van een andere notitie-app (binair, big-endian):
  *      kop:    "MEMOBK2\n", uint32 versie (2), uint32 0
  *      record: "M2RC", uint32 volgnummer, uint32 uuid-lengte (0 of 36), uuid,
- *              int64 A (aanmaaktijd in ms, meestal negatief), int64 0, int64 C (wijzigtijd in ms of 0),
+ *              int64 A, int64 0, int64 C (wijzigtijd in ms of 0),
  *              int64 vlag, int64 tekstlengte, tekst (UTF-8), 32 bytes (hash, genegeerd)
  *      voet:   "M2FO", uint32 aantal records, 32 bytes (controlegetal, genegeerd)
+ *      Het bestand bevat twee lijsten: records met negatieve A zijn de gewone notities
+ *      (aanmaaktijd = -A, nieuwste eerst); een blok records met positieve A achteraan
+ *      (oplopend) is de prullenbak van die app. Die verwijderde notities slaan we over.
  *   Bij elke fout in de structuur wordt het hele bestand geweigerd (niets half importeren).
  */
 'use strict';
@@ -58,6 +61,7 @@
 
     const notes = [];
     let records = 0;
+    let verwijderd = 0;
     for (;;) {
       const merk = ascii(4);
       if (merk === 'M2FO') {
@@ -85,17 +89,17 @@
       nodig(32); p += 32;
       records++;
 
+      // positieve A: een verwijderde notitie (prullenbak van de andere app)
+      if (a >= 0n) { verwijderd++; continue; }
       tekst = zonderSlotRegels(tekst);
       if (tekst.trim() === '') continue;
-      // Meestal staat de aanmaaktijd er negatief in (-ms); bij sommige (vaak oudere)
-      // notities positief. Met de absolute waarde kloppen beide.
-      const aangemaakt = Math.abs(Number(a));
+      const aangemaakt = -Number(a);
       const gewijzigd = Number(c);
       const created = geldigeTijd(aangemaakt, nu) ? aangemaakt : (gewijzigd > 0 && geldigeTijd(gewijzigd, nu) ? gewijzigd : nu);
       const updated = gewijzigd > 0 ? gewijzigd : created;
       notes.push({ text: tekst, created, updated });
     }
-    return notes;
+    return { notes, verwijderd };
   }
 
   /* ---------- ons eigen JSON ---------- */
@@ -119,12 +123,16 @@
 
   /* ---------- alles samen ---------- */
   // buffer: ArrayBuffer; naam en gewijzigd (ms) van het bestand; nu (ms).
-  // Geeft { soort, notes: [{ text, created, updated, id? }] } of gooit een LeesFout.
+  // Geeft { soort, notes: [{ text, created, updated, id? }], verwijderd } of gooit een LeesFout.
+  // verwijderd = aantal overgeslagen verwijderde notities (alleen bij MEMOBK2).
   function lees(buffer, naam, gewijzigd, nu) {
     nu = nu || Date.now();
     if (!buffer || buffer.byteLength > MAX_BYTES) fout('te groot of leeg');
     const bytes = new Uint8Array(buffer);
-    if (isMemo(bytes)) return { soort: 'memo', notes: leesMemo(buffer, nu) };
+    if (isMemo(bytes)) {
+      const m = leesMemo(buffer, nu);
+      return { soort: 'memo', notes: m.notes, verwijderd: m.verwijderd };
+    }
 
     let tekst;
     try { tekst = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { fout('geen tekst'); }
@@ -136,16 +144,16 @@
       let data = null;
       try { data = JSON.parse(tekst); } catch { if (isJsonNaam) fout('geen geldige JSON'); }
       if (data !== null) {
-        if (data && data.format === 'notitieboekje') return { soort: 'json', notes: leesEigen(data, nu) };
+        if (data && data.format === 'notitieboekje') return { soort: 'json', notes: leesEigen(data, nu), verwijderd: 0 };
         if (isJsonNaam) fout('onbekend JSON-bestand');
       }
     }
     if (/\.memo$/i.test(naam || '')) fout('geen MEMOBK2');
     // gewoon tekstbestand: één blaadje
     const t = zonderSlotRegels(tekst);
-    if (t.trim() === '') return { soort: 'txt', notes: [] };
+    if (t.trim() === '') return { soort: 'txt', notes: [], verwijderd: 0 };
     const tijd = geldigeTijd(Number(gewijzigd), nu) ? Number(gewijzigd) : nu;
-    return { soort: 'txt', notes: [{ text: t, created: tijd, updated: tijd }] };
+    return { soort: 'txt', notes: [{ text: t, created: tijd, updated: tijd }], verwijderd: 0 };
   }
 
   function maakExport(notities, nu) {
