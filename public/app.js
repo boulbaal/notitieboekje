@@ -184,8 +184,12 @@
   function volgHoogte() {
     const vv = window.visualViewport;
     if (!vv) return;
-    const zet = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+    const zet = () => {
+      document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+      document.documentElement.style.setProperty('--vvt', Math.round(vv.offsetTop) + 'px');
+    };
     vv.addEventListener('resize', zet);
+    vv.addEventListener('scroll', zet);
     zet();
   }
 
@@ -296,6 +300,7 @@
   }
   document.addEventListener('pointerdown', (e) => {
     if (gewapend && !gewapend.contains(e.target)) ontwapen();
+    if (!doneerPaneel.hidden && !doneerPaneel.contains(e.target) && !doneerKnop.contains(e.target)) sluitDoneer();
   }, true);
 
   // Wegvegen met de vinger (of de muis): de rij volgt, voorbij de drempel wordt ze uitgescheurd.
@@ -581,6 +586,19 @@
     pasTaalToe();
   });
 
+  // De taalkeuze is zo breed als de gekozen taal (zonder field-sizing, zoals in Safari, meten we zelf).
+  function pasTaalBreedteAan() {
+    if (window.CSS && CSS.supports && CSS.supports('field-sizing', 'content')) return;
+    const m = document.createElement('span');
+    const cs = getComputedStyle(taalKeuze);
+    m.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;';
+    m.style.font = cs.font;
+    m.textContent = TALEN[taal].naam;
+    document.body.appendChild(m);
+    taalKeuze.style.width = Math.ceil(m.getBoundingClientRect().width + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 2) + 'px';
+    m.remove();
+  }
+
   function pasTaalToe() {
     const html = document.documentElement;
     html.lang = taal;
@@ -599,6 +617,7 @@
     taalKeuze.setAttribute('aria-label', t('lang.pick'));
     taalKeuze.title = t('lang.pick');
     if (taalKeuze.value !== taal) taalKeuze.value = taal;
+    pasTaalBreedteAan();
     versieEl.textContent = 'v' + VERSIE;
     versieEl.title = t('version', { v: VERSIE });
     ververs.setAttribute('aria-label', t('refresh'));

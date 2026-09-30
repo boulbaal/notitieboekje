@@ -99,7 +99,7 @@ button { cursor: pointer; }
 /* ---------- het bureau en het blokje ---------- */
 .bureau {
   position: fixed;
-  left: 0; right: 0; top: 0;
+  left: 0; right: 0; top: var(--vvt, 0px);
   height: var(--vvh, 100dvh);
   display: flex;
   align-items: center;
@@ -332,7 +332,6 @@ button { cursor: pointer; }
   color: var(--potlood);
   line-height: var(--lh);
 }
-.hint { font-size: .86rem; }
 
 /* ---------- voet (klein en rustig) ---------- */
 .voet {
@@ -471,38 +470,40 @@ button { cursor: pointer; }
 /* ---------- strookje (ongedaan maken) en meldingen ---------- */
 .strookje {
   position: absolute;
-  left: 50%;
+  left: 0; right: 0;
+  margin-inline: auto;
+  width: max-content;
   bottom: 54px;
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 14px;
-  max-width: calc(100% - 28px);
-  padding: 8px 10px 8px 16px;
+  gap: 6px;
+  max-width: calc(100% - 12px);
+  padding: 6px 6px 6px 14px;
   background: #fffdf2;
   color: #22252b;
-  font-size: .92rem;
+  font-size: .86rem;
   line-height: 1.3;
   border-radius: 2px;
   box-shadow: 0 8px 20px -6px rgba(30, 20, 0, .5), 0 1px 2px rgba(0, 0, 0, .15);
-  transform: translate(-50%, 12px) rotate(-1deg);
+  transform: translateY(12px) rotate(-1deg);
   opacity: 0;
   visibility: hidden;
   transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
 }
-[dir="rtl"] .strookje { padding: 8px 16px 8px 10px; }
+[dir="rtl"] .strookje { padding: 6px 14px 6px 6px; }
 .strookje.zichtbaar {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, 0) rotate(-1deg);
+  transform: translateY(0) rotate(-1deg);
   transition: opacity .18s ease, transform .18s ease;
 }
 .strookje button {
   border: 0;
   background: transparent;
   color: #1f4f9e;
-  font-weight: 650;
-  padding: 6px 6px;
+  font-weight: 600;
+  padding: 8px 6px;
   text-decoration: underline;
   text-underline-offset: 3px;
   white-space: nowrap;
