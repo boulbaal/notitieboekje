@@ -600,6 +600,111 @@ test('with a page open, a new version reloads when the app is hidden, after savi
   }
 });
 
+/* ---------------- op het beginscherm zetten ---------------- */
+
+async function nepInstallEvent(page) {
+  return page.evaluate(() => {
+    window.__prompt = window.__prompt || 0;
+    const e = new Event('beforeinstallprompt', { cancelable: true });
+    e.prompt = () => { window.__prompt++; return Promise.resolve(); };
+    e.userChoice = Promise.resolve({ outcome: 'accepted', platform: 'web' });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+}
+
+test('install note (Android): a note on the pad with an Install button; closing keeps it away', async ({ page }, testInfo) => {
+  await open(page);
+  expect(await nepInstallEvent(page)).toBe(true);
+  const briefje = page.locator('#installeer');
+  if (!isMobiel(testInfo)) {
+    await expect(briefje).toBeHidden();           // nooit op de desktop
+    return;
+  }
+  await expect(briefje).toBeVisible();
+  await expect(page.locator('#installTitel')).toHaveText('Put the notebook on your phone');
+  await expect(page.locator('#installKnop')).toHaveText('Install');
+  await expect(page.locator('#installUitleg')).toBeHidden();
+  await page.locator('#taal').selectOption('nl');
+  await expect(page.locator('#installTitel')).toHaveText('Zet het boekje op je gsm');
+  await expect(page.locator('#installKnop')).toHaveText('Installeren');
+  await expect(page.locator('#installDicht')).toHaveAttribute('aria-label', 'Sluiten');
+  // alleen op de beginpagina
+  await nieuwBlad(page);
+  await expect(briefje).toBeHidden();
+  await terug(page);
+  await expect(briefje).toBeVisible();
+  // de onderste blaadjes blijven bereikbaar boven het briefje
+  expect(await page.locator('#lijstvak').evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThan(40);
+  await page.locator('#installKnop').click();
+  expect(await page.evaluate(() => window.__prompt)).toBe(1);
+  await expect(briefje).toBeHidden();
+  // volgende keer weer (niet gesloten), tot je op x tikt: dan 14 dagen niet
+  await page.reload();
+  await nepInstallEvent(page);
+  await expect(briefje).toBeVisible();
+  await page.locator('#installDicht').click();
+  await expect(briefje).toBeHidden();
+  const t0 = Number(await page.evaluate(() => localStorage.getItem('notitieboekje.install.dicht')));
+  expect(Math.abs(Date.now() - t0)).toBeLessThan(60000);
+  await page.reload();
+  await nepInstallEvent(page);
+  await expect(briefje).toBeHidden();
+  // na 15 dagen mag het weer
+  await page.evaluate(() => localStorage.setItem('notitieboekje.install.dicht', String(Date.now() - 15 * 864e5)));
+  await page.reload();
+  await nepInstallEvent(page);
+  await expect(briefje).toBeVisible();
+});
+
+test('install note: iOS Safari explains Share, iOS Chrome points to Safari, never when installed', async ({ browser, baseURL }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-390', 'eigen contexten; één keer is genoeg');
+  const telefoon = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce', locale: 'nl-BE' };
+  const safari = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const chromeIOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/129.0.6668.46 Mobile/15E148 Safari/604.1';
+
+  let ctx = await browser.newContext({ ...telefoon, userAgent: safari });
+  let p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installeer')).toBeVisible();
+  await expect(p.locator('#installTitel')).toHaveText('Zet het boekje op je gsm');
+  await expect(p.locator('#installUitleg')).toHaveText('Tik op  en dan op ‘Zet op beginscherm’.');
+  await expect(p.locator('#installUitleg svg[aria-label="Delen"]')).toHaveCount(1);
+  await expect(p.locator('#installKnop')).toBeHidden();
+  await p.locator('#taal').selectOption('en');
+  await expect(p.locator('#installUitleg')).toHaveText('Tap  and then “Add to Home Screen”.');
+  await ctx.close();
+
+  ctx = await browser.newContext({ ...telefoon, userAgent: chromeIOS });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installUitleg')).toContainText('Open deze pagina in Safari.');
+  await ctx.close();
+
+  // al geïnstalleerd (iOS: navigator.standalone)
+  ctx = await browser.newContext({ ...telefoon, userAgent: safari });
+  await ctx.addInitScript(() => Object.defineProperty(navigator, 'standalone', { get: () => true }));
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#titel')).toBeVisible();
+  await expect(p.locator('#installeer')).toBeHidden();
+  await ctx.close();
+
+  // al geïnstalleerd (Android: display-mode standalone)
+  ctx = await browser.newContext(telefoon);
+  await ctx.addInitScript(() => {
+    const orig = window.matchMedia.bind(window);
+    window.matchMedia = (q) => (String(q).includes('display-mode: standalone')
+      ? { matches: true, media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return false; } }
+      : orig(q));
+  });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await nepInstallEvent(p);
+  await expect(p.locator('#installeer')).toBeHidden();
+  await ctx.close();
+});
+
 /* ---------------- offline, opslag en randgevallen ---------------- */
 
 test('works fully offline after the first visit (service worker)', async ({ page, context }) => {

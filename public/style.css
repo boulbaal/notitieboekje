@@ -395,6 +395,71 @@ button { cursor: pointer; }
 }
 @keyframes draai { to { transform: rotate(360deg); } }
 
+/* ---------- installeren: een briefje met een paperclip op het blokje ---------- */
+.installeer {
+  position: absolute;
+  left: 16px; right: 16px;
+  bottom: calc(var(--onder) + 4px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  padding-inline-end: 34px;
+  background: #fdfcf5;
+  color: #22252b;
+  border-radius: 2px;
+  box-shadow: 0 7px 16px -7px rgba(40, 28, 0, .5), 0 1px 2px rgba(0, 0, 0, .13);
+  transform: rotate(-1.1deg);
+  font-size: .86rem;
+  line-height: 1.35;
+}
+.installeer[hidden] { display: none; }
+.paperclip {
+  position: absolute;
+  top: -15px;
+  inset-inline-start: 22px;
+  color: #8a9097;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .7)) drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
+}
+.installeer-icoon {
+  flex: 0 0 auto;
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+}
+.installeer-tekst { flex: 1 1 auto; min-width: 0; }
+.installeer-tekst p { margin: 0; }
+.installeer-titel { font-weight: 600; color: var(--inkt); }
+.installeer-uitleg { margin-top: 3px !important; color: #45474d; }
+.installeer-uitleg svg { vertical-align: -3px; margin: 0 2px; color: #1a73e8; }
+.installeer-knop {
+  display: inline-block;
+  margin-top: 7px;
+  padding: 6px 16px;
+  border: 1.5px solid #2a61b8;
+  border-radius: 999px;
+  background: transparent;
+  color: #1f4f9e;
+  font-size: .86rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.installeer-knop:hover { background: #eaf1fc; }
+.installeer-knop[hidden] { display: none; }
+.installeer-dicht {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 2px;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: transparent;
+  color: #6b6d73;
+}
+.installeer-dicht:hover { color: #22252b; background: rgba(0, 0, 0, .05); }
+.installeer-knop:focus-visible, .installeer-dicht:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* ---------- doneren: een los briefje ---------- */
 .doneerpaneel {
   position: absolute;

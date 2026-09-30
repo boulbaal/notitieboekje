@@ -123,6 +123,12 @@ test('manifest, icons, OG image, robots and sitemap', () => {
   }
   expect(m.icons.some((i) => i.purpose === 'maskable' && i.sizes === '512x512')).toBe(true);
   expect(pngMaat('apple-touch-icon.png')).toEqual([180, 180]);
+  // schermafdruk voor de rijkere installatie-weergave in Chrome
+  const smal = (m.screenshots || []).find((x) => x.form_factor === 'narrow');
+  expect(smal).toBeTruthy();
+  expect(fs.existsSync(path.join(PUBLIC, smal.src.slice(1)))).toBe(true);
+  const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+  expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes">');
   expect(pngMaat('og.png')).toEqual([1200, 630]);
   expect(fs.readFileSync(path.join(PUBLIC, 'robots.txt'), 'utf8')).toContain('Sitemap: https://notitieboekje.vanali.workers.dev/sitemap.xml');
   const sitemap = fs.readFileSync(path.join(PUBLIC, 'sitemap.xml'), 'utf8');

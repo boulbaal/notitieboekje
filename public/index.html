@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Notitieboekje">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="canonical" href="https://notitieboekje.vanali.workers.dev/">
@@ -47,6 +48,18 @@
           <p class="hint" id="hint" hidden></p>
           <p class="sr" id="lijstHulp"></p>
         </div>
+        <aside class="installeer" id="installeer" aria-labelledby="installTitel" hidden>
+          <svg class="paperclip" viewBox="0 0 16 44" width="16" height="44" aria-hidden="true"><path d="M5.5 30V9.5a3.5 3.5 0 0 1 7 0V33a5.5 5.5 0 0 1-11 0V12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <img class="installeer-icoon" src="/icon-192.png" alt="" width="42" height="42">
+          <div class="installeer-tekst">
+            <p class="installeer-titel" id="installTitel">Put the notebook on your phone</p>
+            <p class="installeer-uitleg" id="installUitleg" hidden></p>
+            <button class="installeer-knop" id="installKnop" type="button" hidden>Install</button>
+          </div>
+          <button class="installeer-dicht" id="installDicht" type="button" aria-label="Close" title="Close">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </aside>
         <footer class="voet" id="voet">
           <button class="voetknop" id="doneerKnop" type="button" aria-expanded="false" aria-controls="doneerPaneel">Donate</button>
           <span class="stip" aria-hidden="true">·</span>

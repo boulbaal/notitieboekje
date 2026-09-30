@@ -637,6 +637,7 @@
       ongedaanKnop.textContent = t('undo');
     }
     if (melding.dataset.sleutel) melding.textContent = t(melding.dataset.sleutel);
+    if (installModus) { vulInstall(); pasLijstRuimteAan(); }
     toonLijst(null);
   }
 
@@ -759,6 +760,106 @@
       .catch(() => {});
     setInterval(zoekUpdate, 30 * 60 * 1000);
   }
+
+  /* ================= op het beginscherm zetten ================= */
+  // Een browser installeert nooit zonder een tik van de gebruiker. Wij tonen alleen een
+  // briefje: op Android met een knop (beforeinstallprompt), op iOS met de uitleg via Delen.
+  const installeer = $('installeer');
+  const installTitel = $('installTitel');
+  const installUitleg = $('installUitleg');
+  const installKnop = $('installKnop');
+  const installDicht = $('installDicht');
+  const K_INSTALL = PREFIX + 'install.dicht';
+  const INSTALL_RUST = 14 * 24 * 3600 * 1000;   // na sluiten 14 dagen niet meer tonen
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const iosAndereBrowser = isIOS && /CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
+  let installModus = null;     // 'knop' (Android e.a.) of 'ios'
+  let installEvent = null;
+
+  function isStandalone() {
+    try { if (window.matchMedia('(display-mode: standalone)').matches) return true; } catch {}
+    return navigator.standalone === true;
+  }
+  function isTelefoonOfTablet() {
+    try { if (window.matchMedia('(pointer: coarse)').matches) return true; } catch {}
+    return window.innerWidth < 768;
+  }
+  function onlangsGesloten() {
+    const t0 = parseInt(opslag.lees(K_INSTALL) || '0', 10) || 0;
+    return t0 > 0 && Date.now() - t0 < INSTALL_RUST;
+  }
+  function deelIcoon() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '17');
+    svg.setAttribute('height', '17');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', t('install.share'));
+    svg.setAttribute('class', 'deel-icoon');
+    const pad = document.createElementNS(ns, 'path');
+    pad.setAttribute('d', 'M8.5 9.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-1.5M12 3v11.5M8.5 6.5 12 3l3.5 3.5');
+    pad.setAttribute('fill', 'none');
+    pad.setAttribute('stroke', 'currentColor');
+    pad.setAttribute('stroke-width', '1.9');
+    pad.setAttribute('stroke-linecap', 'round');
+    pad.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(pad);
+    return svg;
+  }
+  function vulInstall() {
+    installTitel.textContent = t('install.title');
+    installKnop.textContent = t('install.button');
+    installDicht.setAttribute('aria-label', t('install.close'));
+    installDicht.title = t('install.close');
+    installKnop.hidden = installModus !== 'knop';
+    installUitleg.hidden = installModus !== 'ios';
+    installUitleg.textContent = '';
+    if (installModus === 'ios') {
+      const delen = t('install.ios').split('{share}');
+      installUitleg.append(document.createTextNode(delen[0] || ''), deelIcoon(), document.createTextNode(delen[1] || ''));
+      if (iosAndereBrowser) installUitleg.append(document.createTextNode(' ' + t('install.safari')));
+    }
+  }
+  function pasLijstRuimteAan() {
+    // zodat de onderste blaadjes niet achter het briefje verdwijnen
+    lijstvak.style.paddingBottom = installeer.hidden ? '' : (installeer.offsetHeight + 14) + 'px';
+  }
+  function toonInstall(modus) {
+    if (!isTelefoonOfTablet() || isStandalone() || onlangsGesloten()) return;
+    installModus = modus;
+    vulInstall();
+    installeer.hidden = false;
+    pasLijstRuimteAan();
+  }
+  function verbergInstall() {
+    installeer.hidden = true;
+    installModus = null;
+    pasLijstRuimteAan();
+  }
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installEvent = e;
+    toonInstall('knop');
+  });
+  window.addEventListener('appinstalled', () => { installEvent = null; verbergInstall(); });
+  try {
+    window.matchMedia('(display-mode: standalone)').addEventListener('change', () => { if (isStandalone()) verbergInstall(); });
+  } catch {}
+  installKnop.addEventListener('click', async () => {
+    const e = installEvent;
+    if (!e) { verbergInstall(); return; }
+    installEvent = null;                      // prompt() mag maar één keer
+    try { await e.prompt(); } catch {}
+    try { await e.userChoice; } catch {}
+    verbergInstall();
+  });
+  installDicht.addEventListener('click', () => {
+    opslag.schrijf(K_INSTALL, String(Date.now()));
+    verbergInstall();
+  });
+  if (isIOS) toonInstall('ios');
 
   /* ================= start ================= */
   meetLijn();
