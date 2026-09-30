@@ -132,6 +132,13 @@
   let taal = bepaalTaal();
   function t(sleutel, vars) {
     let s = (TEKSTEN[taal] && TEKSTEN[taal][sleutel]) || TEKSTEN.en[sleutel] || sleutel;
+    if (s && typeof s === 'object') {
+      // meervoudsvormen: kies de juiste via Intl.PluralRules
+      const n = vars && typeof vars.n === 'number' ? vars.n : 0;
+      let soort = 'other';
+      try { soort = new Intl.PluralRules(taal).select(n); } catch {}
+      s = s[soort] || s.other;
+    }
     if (vars) for (const k of Object.keys(vars)) s = s.split('{' + k + '}').join(String(vars[k]));
     return s;
   }
@@ -156,6 +163,9 @@
   const strookjeTekst = $('strookjeTekst');
   const ongedaanKnop = $('ongedaan');
   const melding = $('melding');
+  const meerKnop = $('meerKnop');
+  const meerMenu = $('meerMenu');
+  const importBestand = $('importBestand');
 
   /* ================= lijnen precies onder de basislijn ================= */
   // We meten waar de basislijn van het lettertype in een regel valt en zetten de lijn
@@ -196,14 +206,24 @@
   /* ================= meldingen ================= */
   let meldingTimer = null;
   function toonMelding(sleutel, blijvend) {
+    melding.classList.remove('info');
     melding.textContent = t(sleutel);
     melding.dataset.sleutel = sleutel;
     clearTimeout(meldingTimer);
     meldingTimer = setTimeout(verbergMelding, blijvend ? 12000 : 7000);
   }
+  // een gewone mededeling (geen fout), met een al vertaalde tekst
+  function toonBericht(tekst) {
+    melding.classList.add('info');
+    melding.textContent = tekst;
+    delete melding.dataset.sleutel;
+    clearTimeout(meldingTimer);
+    meldingTimer = setTimeout(verbergMelding, 7000);
+  }
   function verbergMelding() {
     clearTimeout(meldingTimer);
     melding.textContent = '';
+    melding.classList.remove('info');
     delete melding.dataset.sleutel;
   }
   melding.addEventListener('click', verbergMelding);
@@ -301,6 +321,7 @@
   document.addEventListener('pointerdown', (e) => {
     if (gewapend && !gewapend.contains(e.target)) ontwapen();
     if (!doneerPaneel.hidden && !doneerPaneel.contains(e.target) && !doneerKnop.contains(e.target)) sluitDoneer();
+    if (!meerMenu.hidden && !meerMenu.contains(e.target) && !meerKnop.contains(e.target)) sluitMenu(false);
   }, true);
 
   // Wegvegen met de vinger (of de muis): de rij volgt, voorbij de drempel wordt ze uitgescheurd.
@@ -461,6 +482,7 @@
     tekst.value = n ? n.t : '';
     if (uitgescheurd) verbergStrookje();
     sluitDoneer();
+    sluitMenu(false);
     ontwapen();
     try { history.pushState({ nb: 'blad' }, ''); } catch {}
     // eerst het blaadje zichtbaar (onder de beginpagina) en de focus erin, dan omslaan:
@@ -631,6 +653,10 @@
     ververs.setAttribute('aria-label', t('refresh'));
     ververs.title = t('refresh');
     doneerKnop.textContent = t('donate.button');
+    meerKnop.setAttribute('aria-label', t('more'));
+    meerKnop.title = t('more');
+    $('exportTekst').textContent = t('export');
+    $('importTekst').textContent = t('import');
     vulDoneer();
     if (strookje.classList.contains('zichtbaar')) {
       strookjeTekst.textContent = t('torn');
@@ -675,6 +701,7 @@
   doneerKnop.addEventListener('click', (e) => {
     e.stopPropagation();
     const open = doneerPaneel.hidden;
+    if (open) { sluitMenu(false); verbergMelding(); }
     doneerPaneel.hidden = !open;
     doneerKnop.setAttribute('aria-expanded', String(open));
     if (open) { const eerste = doneerPaneel.querySelector('a'); if (eerste) eerste.focus({ preventScroll: true }); }
@@ -714,6 +741,128 @@
       }
     } catch {}
     location.reload();
+  });
+
+  /* ================= meer: exporteren en importeren ================= */
+  const menuItems = () => Array.from(meerMenu.querySelectorAll('[role="menuitem"]'));
+  function openMenu() {
+    sluitDoneer();
+    verbergMelding();
+    meerMenu.hidden = false;
+    meerKnop.setAttribute('aria-expanded', 'true');
+    menuItems()[0].focus({ preventScroll: true });
+  }
+  function sluitMenu(focusTerug) {
+    if (meerMenu.hidden) return;
+    meerMenu.hidden = true;
+    meerKnop.setAttribute('aria-expanded', 'false');
+    if (focusTerug) meerKnop.focus({ preventScroll: true });
+  }
+  meerKnop.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (meerMenu.hidden) openMenu(); else sluitMenu(true);
+  });
+  meerMenu.addEventListener('keydown', (e) => {
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const j = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      items[j].focus();
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      items[e.key === 'Home' ? 0 : items.length - 1].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      sluitMenu(true);
+    } else if (e.key === 'Tab') {
+      sluitMenu(false);
+    }
+  });
+
+  function datumVoorNaam(d) {
+    const twee = (x) => String(x).padStart(2, '0');
+    return d.getFullYear() + '-' + twee(d.getMonth() + 1) + '-' + twee(d.getDate());
+  }
+  // Exporteren: ons eigen JSON-bestand; delen (telefoon) of downloaden.
+  async function exporteer() {
+    bewaar();
+    const notities = alleNotities();
+    if (!notities.length) { toonBericht(t('export.empty')); return; }
+    const nu = new Date();
+    const inhoud = JSON.stringify(self.NB_IMPORT.maakExport(notities, nu.getTime()), null, 2);
+    const naam = 'notitieboekje-' + datumVoorNaam(nu) + '.json';
+    const blob = new Blob([inhoud], { type: 'application/json' });
+    let bestand = null;
+    try { bestand = new File([blob], naam, { type: 'application/json' }); } catch {}
+    if (bestand && navigator.share && navigator.canShare) {
+      try {
+        if (navigator.canShare({ files: [bestand] })) {
+          await navigator.share({ files: [bestand], title: naam });
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;     // de gebruiker brak het delen af
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = naam;
+    a.rel = 'noopener';
+    a.hidden = true;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  // Importeren: alleen toevoegen, nooit overschrijven of wissen; dezelfde tekst slaan we over.
+  function voegToe(notes) {
+    const bestaand = new Set(alleNotities().map((n) => n.t));
+    let toegevoegd = 0;
+    let dubbel = 0;
+    let vol = false;
+    for (const n of notes) {
+      if (bestaand.has(n.text)) { dubbel++; continue; }
+      let id = n.id && opslag.lees(NOTE + n.id) === null ? n.id : nieuwId();
+      while (opslag.lees(NOTE + id) !== null) id = nieuwId();
+      const r = schrijfNotitie({ id, t: n.text, u: n.updated, c: n.created });
+      if (r === 'vol') { vol = true; break; }
+      bestaand.add(n.text);
+      toegevoegd++;
+    }
+    return { toegevoegd, dubbel, vol };
+  }
+  async function importeer(bestand) {
+    let gelezen;
+    try {
+      const buffer = bestand.arrayBuffer ? await bestand.arrayBuffer() : await new Response(bestand).arrayBuffer();
+      gelezen = self.NB_IMPORT.lees(buffer, bestand.name || '', bestand.lastModified, Date.now());
+    } catch {
+      toonMelding('import.error');
+      return;
+    }
+    const r = voegToe(gelezen.notes);
+    toonLijst(null);
+    if (r.toegevoegd > 0) vraagBlijvendeOpslag();
+    if (r.vol) { toonMelding('quota'); return; }
+    let bericht = t('import.added', { n: r.toegevoegd });
+    if (r.dubbel > 0) bericht += t('import.sep') + t('import.skipped', { n: r.dubbel });
+    toonBericht(bericht);
+  }
+  $('exportKnop').addEventListener('click', () => { sluitMenu(false); meerKnop.focus({ preventScroll: true }); exporteer(); });
+  $('importKnop').addEventListener('click', () => {
+    sluitMenu(false);
+    meerKnop.focus({ preventScroll: true });
+    importBestand.value = '';
+    importBestand.click();
+  });
+  importBestand.addEventListener('change', () => {
+    const f = importBestand.files && importBestand.files[0];
+    importBestand.value = '';
+    if (f) importeer(f);
   });
 
   /* ================= nieuwe versies: vanzelf bijwerken ================= */

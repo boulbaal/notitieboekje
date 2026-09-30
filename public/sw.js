@@ -12,6 +12,7 @@ const SHELL = [
   '/',
   '/style.css',
   '/i18n.js',
+  '/import.js',
   '/app.js',
   '/manifest.webmanifest',
   '/favicon.png',

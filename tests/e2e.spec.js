@@ -705,6 +705,189 @@ test('install note: iOS Safari explains Share, iOS Chrome points to Safari, neve
   await ctx.close();
 });
 
+/* ---------------- meer: exporteren en importeren ---------------- */
+
+const { maakMemo, VOORBEELD, T } = require('./memo-maker');
+const alleOpgeslagen = (page) => page.evaluate(() => Object.keys(localStorage)
+  .filter((k) => k.startsWith('notitieboekje.n.'))
+  .map((k) => JSON.parse(localStorage.getItem(k)))
+  .sort((a, b) => b.u - a.u));
+async function kiesUitMenu(page, id) {
+  await page.locator('#meerKnop').click();
+  await expect(page.locator('#meerMenu')).toBeVisible();
+  await page.locator('#' + id).click();
+}
+async function importeer(page, naam, buffer, mimeType = 'application/octet-stream') {
+  const [kiezer] = await Promise.all([page.waitForEvent('filechooser'), kiesUitMenu(page, 'importKnop')]);
+  await kiezer.setFiles({ name: naam, mimeType, buffer });
+}
+async function exporteerAlsDownload(page) {
+  const [dl] = await Promise.all([page.waitForEvent('download'), kiesUitMenu(page, 'exportKnop')]);
+  const pad = await dl.path();
+  return { naam: dl.suggestedFilename(), data: JSON.parse(require('fs').readFileSync(pad, 'utf8')) };
+}
+const zonderDelen = () => { try { delete Navigator.prototype.share; delete Navigator.prototype.canShare; } catch {} navigator.share = undefined; navigator.canShare = undefined; };
+
+test('export: a JSON file with all pages (download when sharing files is not possible)', async ({ page }) => {
+  await page.addInitScript(zonderDelen);
+  await open(page);
+  await zaai(page, ['Eerste\nmet twee regels', 'Tweede 🎉', 'مرحبا']);
+  const { naam, data } = await exporteerAlsDownload(page);
+  expect(naam).toMatch(/^notitieboekje-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(data.format).toBe('notitieboekje');
+  expect(data.version).toBe(1);
+  expect(Math.abs(Date.parse(data.exported) - Date.now())).toBeLessThan(60000);
+  const opgeslagen = await alleOpgeslagen(page);
+  expect(data.notes.map((n) => [n.text, n.created, n.updated])).toEqual(opgeslagen.map((n) => [n.t, n.c, n.u]));
+  expect(data.notes.every((n) => /^z\d{4}$/.test(n.id))).toBe(true);
+  await expect(page.locator('#meerMenu')).toBeHidden();
+});
+
+test('export uses the share sheet when the device can share files', async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.canShare = (d) => !!(d && d.files && d.files.length);
+    navigator.share = async (d) => { window.__gedeeld = { naam: d.files[0].name, type: d.files[0].type, tekst: await d.files[0].text() }; };
+  });
+  await open(page);
+  await zaai(page, ['Gedeeld blaadje']);
+  await kiesUitMenu(page, 'exportKnop');
+  await page.waitForFunction(() => window.__gedeeld);
+  const g = await page.evaluate(() => window.__gedeeld);
+  expect(g.naam).toMatch(/^notitieboekje-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(g.type).toBe('application/json');
+  expect(JSON.parse(g.tekst).notes.map((n) => n.text)).toEqual(['Gedeeld blaadje']);
+});
+
+test('export with no pages says so', async ({ page }) => {
+  await open(page);
+  await kiesUitMenu(page, 'exportKnop');
+  await expect(page.locator('#melding')).toHaveText('No pages to export yet.');
+});
+
+test('import our own export into an empty notebook gives identical pages; twice adds nothing', async ({ page, browser, baseURL }) => {
+  await page.addInitScript(zonderDelen);
+  await open(page);
+  await zaai(page, ['Eerste\nmet twee regels', 'Tweede 🎉', 'مرحبا']);
+  const { data } = await exporteerAlsDownload(page);
+  const origineel = await alleOpgeslagen(page);
+
+  const ctx = await browser.newContext({ reducedMotion: 'reduce', locale: 'nl-BE' });
+  const p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await importeer(p, 'notitieboekje-2026-09-30.json', Buffer.from(JSON.stringify(data, null, 2)), 'application/json');
+  await expect(p.locator('#melding')).toHaveText('3 blaadjes toegevoegd');
+  await expect(p.locator('#melding')).toHaveClass(/info/);
+  await expect(p.locator('#lijst li .rij')).toHaveText(['Eerste', 'Tweede 🎉', 'مرحبا']);
+  expect((await alleOpgeslagen(p)).map((n) => [n.t, n.c, n.u])).toEqual(origineel.map((n) => [n.t, n.c, n.u]));
+  // nog eens: niets nieuws, niets overschreven
+  await importeer(p, 'notitieboekje-2026-09-30.json', Buffer.from(JSON.stringify(data)), 'application/json');
+  await expect(p.locator('#melding')).toHaveText('0 blaadjes toegevoegd, 3 stonden er al');
+  expect(await opgeslagen(p)).toBe(3);
+  await ctx.close();
+});
+
+test('import a MEMOBK2 backup (synthetic): right count, texts, timestamps and order', async ({ page }) => {
+  await open(page);
+  await zaai(page, ['Al aanwezig']);
+  await importeer(page, '2026-09-30 15.16.40.500-3F2504E0-4F89-41D3-9A0C-0305E82C3301.memo', maakMemo(VOORBEELD));
+  // 9 records: 1 leeg (overgeslagen), 1 dubbel binnen het bestand
+  await expect(page.locator('#melding')).toHaveText('7 pages added, 1 was already there');
+  const n = await alleOpgeslagen(page);
+  expect(n).toHaveLength(8);
+  const perTekst = Object.fromEntries(n.map((x) => [x.t, x]));
+  expect(perTekst['Boodschappen\nmelk\nbrood']).toMatchObject({ c: T.boodschappen, u: T.boodschappen });
+  expect(perTekst['Tandarts vrijdag 10u']).toMatchObject({ c: T.tandarts, u: T.tandartsGewijzigd });
+  expect(perTekst['Oud briefje van lang geleden']).toMatchObject({ c: T.oud, u: T.oud });
+  expect(perTekst['Rare datum, wel een wijzigtijd']).toMatchObject({ c: T.raar, u: T.raar });
+  expect(perTekst['🎉 Feestje 👨‍👩‍👧 zaterdag']).toBeTruthy();
+  expect(perTekst['Café crème, ½ liter, € 3,50']).toBeTruthy();
+  // de lijst volgt de wijzigtijd: het bestaande blaadje (net gemaakt) bovenaan, het oudste onderaan
+  await expect(rijen(page)).toHaveText([
+    'Al aanwezig',
+    'Boodschappen',
+    'Café crème, ½ liter, € 3,50',
+    '🎉 Feestje 👨‍👩‍👧 zaterdag',
+    'مرحبا بالعالم',
+    'Tandarts vrijdag 10u',
+    'Rare datum, wel een wijzigtijd',
+    'Oud briefje van lang geleden',
+  ]);
+  expect(await rijen(page).nth(4).locator('span').evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
+  // plural in het Pools: 7 = "many", 2..4 = "few"
+  await page.locator('#taal').selectOption('pl');
+  await importeer(page, 'b.memo', maakMemo([{ text: 'Nowa jeden', a: -T.tandarts }, { text: 'Nowa dwa', a: -T.tandarts }]));
+  await expect(page.locator('#melding')).toHaveText('2 kartki dodane');
+});
+
+test('a corrupt file shows an error and imports nothing', async ({ page }) => {
+  await open(page);
+  await zaai(page, ['Blijft zoals het was']);
+  const goed = maakMemo(VOORBEELD);
+  await importeer(page, 'kapot.memo', goed.subarray(0, goed.length - 60));
+  await expect(page.locator('#melding')).toHaveText('I can’t read this file.');
+  await expect(page.locator('#melding')).not.toHaveClass(/info/);
+  expect(await opgeslagen(page)).toBe(1);
+  await importeer(page, 'kapot.json', Buffer.from('{"format":"notitieboekje","notes":['), 'application/json');
+  await expect(page.locator('#melding')).toHaveText('I can’t read this file.');
+  await importeer(page, 'foto.jpg', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]));
+  await expect(page.locator('#melding')).toHaveText('I can’t read this file.');
+  expect(await opgeslagen(page)).toBe(1);
+  await expect(rijen(page)).toHaveText(['Blijft zoals het was']);
+});
+
+test('import a plain .txt file as one page', async ({ page }) => {
+  await open(page);
+  await importeer(page, 'lijstje.txt', Buffer.from('Lijstje voor de markt\nappels\nperen\n'), 'text/plain');
+  await expect(page.locator('#melding')).toHaveText('1 page added');
+  await expect(rijen(page)).toHaveText(['Lijstje voor de markt']);
+  await rijen(page).first().click();
+  await expect(page.locator('#tekst')).toHaveValue('Lijstje voor de markt\nappels\nperen');
+});
+
+test('the ⋯ menu: keyboard, Escape returns focus, closes on outside tap, fits small screens', async ({ page }, testInfo) => {
+  await open(page);
+  const knop = page.locator('#meerKnop');
+  const menu = page.locator('#meerMenu');
+  await expect(knop).toHaveAttribute('aria-label', 'More');
+  await expect(knop).toHaveAttribute('aria-haspopup', 'menu');
+  await knop.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await expect(knop).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#exportKnop')).toBeFocused();
+  await expect(page.getByRole('menuitem')).toHaveText(['Export', 'Import']);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#importKnop')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#exportKnop')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(knop).toBeFocused();
+  await expect(knop).toHaveAttribute('aria-expanded', 'false');
+  // buiten het menu tikken sluit het; doneren en menu staan nooit tegelijk open
+  await knop.click();
+  await expect(menu).toBeVisible();
+  const box = await menu.boundingBox();
+  const vw = page.viewportSize().width;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(vw);
+  await page.locator('#doneerKnop').click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#doneerPaneel')).toBeVisible();
+  await knop.click();
+  await expect(page.locator('#doneerPaneel')).toBeHidden();
+  await page.locator('#titel').click();
+  await expect(menu).toBeHidden();
+  // vertaald
+  await page.locator('#taal').selectOption('nl');
+  await expect(knop).toHaveAttribute('aria-label', 'Meer');
+  await knop.click();
+  await expect(page.getByRole('menuitem')).toHaveText(['Exporteren', 'Importeren']);
+  if (isMobiel(testInfo)) {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
 /* ---------------- offline, opslag en randgevallen ---------------- */
 
 test('works fully offline after the first visit (service worker)', async ({ page, context }) => {
