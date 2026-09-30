@@ -236,13 +236,28 @@ test('a very long note opens, scrolls and saves', async ({ page }) => {
 
 /* ---------------- uitscheuren ---------------- */
 
-test('swipe a note away to tear it out, and undo brings it back', async ({ page }, testInfo) => {
+// een rij opzij vegen zodat delen en uitscheuren tevoorschijn komen (LTR: naar links)
+const veegOpen = async (page, li, testInfo, richting = -1) => veeg(page, li, richting * 90, testInfo);
+
+test('swipe reveals share and tear-out; the trash tears it out and undo brings it back', async ({ page }, testInfo) => {
   await open(page);
   await zaai(page, ['Boven', 'Midden', 'Onder']);
-  await expect(rijen(page)).toHaveCount(3);
   const li = page.locator('#lijst li').nth(1);
-  const box = await li.boundingBox();
-  await veeg(page, li, box.width * 0.6, testInfo);
+  await veegOpen(page, li, testInfo);
+  await expect(li).toHaveClass(/open/);
+  await expect(li.locator('.actie.delen')).toBeVisible();
+  await expect(li.locator('.actie.weg')).toBeVisible();
+  await expect(li.locator('.actie.delen')).toHaveAccessibleName('Share: Midden');
+  await expect(li.locator('.actie.weg')).toHaveAccessibleName('Tear out: Midden');
+  for (const k of ['.actie.delen', '.actie.weg']) {
+    const b = await li.locator(k).boundingBox();
+    expect(b.width).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+  }
+  // nog niets weg: vegen alleen opent
+  expect(await opgeslagen(page)).toBe(3);
+  await expect(page.locator('#strookje')).not.toHaveClass(/zichtbaar/);
+  await li.locator('.actie.weg').click();
   await expect(rijen(page)).toHaveText(['Boven', 'Onder']);
   await expect(page.locator('#strookje')).toHaveClass(/zichtbaar/);
   await expect(page.locator('#strookjeTekst')).toHaveText('Page torn out');
@@ -250,50 +265,119 @@ test('swipe a note away to tear it out, and undo brings it back', async ({ page 
   await page.locator('#ongedaan').click();
   await expect(rijen(page)).toHaveText(['Boven', 'Midden', 'Onder']);
   expect(await opgeslagen(page)).toBe(3);
-  await expect(page.locator('#strookje')).not.toHaveClass(/zichtbaar/);
-  // naar links vegen kan ook
-  await veeg(page, page.locator('#lijst li').first(), -box.width * 0.6, testInfo);
-  await expect(rijen(page)).toHaveText(['Midden', 'Onder']);
 });
 
-test('a short swipe or a vertical move does not tear anything; a tap still opens', async ({ page }, testInfo) => {
+test('swiping back or tapping elsewhere closes; only one row open; a tap still opens a page', async ({ page }, testInfo) => {
   await open(page);
-  await zaai(page, ['Blijft staan', 'Ook']);
-  const li = page.locator('#lijst li').first();
-  const box = await li.boundingBox();
-  await veeg(page, li, box.width * 0.15, testInfo);
-  await expect(rijen(page)).toHaveCount(2);
+  await zaai(page, ['Een', 'Twee', 'Drie']);
+  const lis = page.locator('#lijst li');
+  // een heel korte veeg doet niets
+  await veeg(page, lis.nth(0), -25, testInfo);
+  await expect(lis.nth(0)).not.toHaveClass(/open/);
   await expect(page.locator('#blad')).toBeHidden();
-  await expect(page.locator('#strookje')).not.toHaveClass(/zichtbaar/);
-  // een verticale beweging (scrollen) scheurt niets uit
+  // open, en terugvegen sluit
+  await veegOpen(page, lis.nth(0), testInfo);
+  await expect(lis.nth(0)).toHaveClass(/open/);
+  await veeg(page, lis.nth(0), 90, testInfo);
+  await expect(lis.nth(0)).not.toHaveClass(/open/);
+  // maar één rij tegelijk open
+  await veegOpen(page, lis.nth(0), testInfo);
+  await veegOpen(page, lis.nth(1), testInfo);
+  await expect(lis.nth(1)).toHaveClass(/open/);
+  await expect(lis.nth(0)).not.toHaveClass(/open/);
+  await expect(page.locator('#lijst li.open')).toHaveCount(1);
+  // tikken op een andere rij sluit alleen de open rij (opent geen blaadje)
+  await page.waitForTimeout(150);
+  await rijen(page).nth(2).click();
+  await expect(page.locator('#lijst li.open')).toHaveCount(0);
+  await expect(page.locator('#blad')).toBeHidden();
+  // tikken op de open rij zelf sluit ze ook
+  await veegOpen(page, lis.nth(0), testInfo);
+  await page.waitForTimeout(150);
+  await rijen(page).nth(0).click();
+  await expect(lis.nth(0)).not.toHaveClass(/open/);
+  await expect(page.locator('#blad')).toBeHidden();
+  // een verticale beweging (scrollen) opent niets
+  const box = await lis.nth(0).boundingBox();
   const y0 = box.y + box.height / 2;
   const x0 = box.x + box.width / 2;
   if (isMobiel(testInfo)) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
-    for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + i * 3, y: y0 + i * 12 }] });
+    for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 - i * 3, y: y0 + i * 12 }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await cdp.detach();
   } else {
     await page.mouse.move(x0, y0);
     await page.mouse.down();
-    await page.mouse.move(x0 + 20, y0 + 90, { steps: 8 });
+    await page.mouse.move(x0 - 20, y0 + 90, { steps: 8 });
     await page.mouse.up();
   }
-  await expect(rijen(page)).toHaveCount(2);
-  await expect(page.locator('#strookje')).not.toHaveClass(/zichtbaar/);
+  await expect(page.locator('#lijst li.open')).toHaveCount(0);
   await expect(page.locator('#blad')).toBeHidden();
-  await page.waitForTimeout(150);   // zo snel na een veeg tikt geen mens
-  await rijen(page).first().click();
-  await expect(page.locator('#tekst')).toHaveValue('Blijft staan');
+  // en een gewone tik opent nog altijd het blaadje
+  await page.waitForTimeout(150);
+  await rijen(page).nth(1).click();
+  await expect(page.locator('#tekst')).toHaveValue('Twee');
+});
+
+test('share opens the share sheet with the first line as title and the full text', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    navigator.share = async (d) => { window.__gedeeld = d; };
+  });
+  await open(page);
+  await zaai(page, ['\n  Boodschappen  \nmelk\nbrood']);
+  const li = page.locator('#lijst li').first();
+  await veegOpen(page, li, testInfo);
+  await li.locator('.actie.delen').click();
+  await page.waitForFunction(() => window.__gedeeld);
+  expect(await page.evaluate(() => window.__gedeeld)).toEqual({ title: 'Boodschappen', text: '\n  Boodschappen  \nmelk\nbrood' });
+  await expect(li).not.toHaveClass(/open/);
+  expect(await opgeslagen(page)).toBe(1);
+});
+
+test('without the share sheet the text is copied ("Copied"), and if that fails too a short error', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    try { delete Navigator.prototype.share; } catch {}
+    navigator.share = undefined;
+    window.__klembord = null;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (x) => { if (window.__klembordFaalt) throw new Error('nee'); window.__klembord = x; } } });
+  });
+  await open(page);
+  await zaai(page, ['Lijstje\nappels']);
+  const li = page.locator('#lijst li').first();
+  await veegOpen(page, li, testInfo);
+  await li.locator('.actie.delen').click();
+  await expect(page.locator('#melding')).toHaveText('Copied');
+  expect(await page.evaluate(() => window.__klembord)).toBe('Lijstje\nappels');
+  await page.locator('#taal').selectOption('nl');
+  await page.evaluate(() => { window.__klembordFaalt = true; document.execCommand = () => false; });
+  await veegOpen(page, page.locator('#lijst li').first(), testInfo);
+  await page.locator('#lijst li').first().locator('.actie.delen').click();
+  await expect(page.locator('#melding')).toHaveText('Delen lukt niet');
+});
+
+test('RTL: the row slides the other way', async ({ page }, testInfo) => {
+  await open(page);
+  await zaai(page, ['مرحبا', 'Twee']);
+  await page.locator('#taal').selectOption('ar');
+  const li = page.locator('#lijst li').first();
+  await veeg(page, li, -90, testInfo);                // naar links: niets in RTL
+  await expect(li).not.toHaveClass(/open/);
+  await veeg(page, li, 90, testInfo);                 // naar rechts: open
+  await expect(li).toHaveClass(/open/);
+  const rij = await li.locator('.rij').boundingBox();
+  const acties = await li.locator('.acties').boundingBox();
+  expect(acties.x).toBeLessThan(rij.x);               // de acties staan links
+  await expect(li.locator('.actie.delen')).toHaveAccessibleName('مشاركة: مرحبا');
 });
 
 test('the undo strip disappears after about five seconds and the page stays gone', async ({ page }, testInfo) => {
   await open(page);
   await zaai(page, ['Weg ermee', 'Blijft']);
   const li = page.locator('#lijst li').first();
-  const box = await li.boundingBox();
-  await veeg(page, li, box.width * 0.6, testInfo);
+  await veegOpen(page, li, testInfo);
+  await li.locator('.actie.weg').click();
   await expect(page.locator('#strookje')).toHaveClass(/zichtbaar/);
   await page.waitForTimeout(4000);
   await expect(page.locator('#strookje')).toHaveClass(/zichtbaar/);
@@ -319,54 +403,86 @@ test('keyboard: Delete on a focused page tears it out, focus moves on, Ctrl+Z un
   await expect(page.locator('#lijstHulp')).toHaveText('Press Delete to tear out a page.');
 });
 
-test('a hidden "Tear out" button per page is reachable by keyboard and screen readers', async ({ page }) => {
+test('keyboard and screen readers: a small per-row actions button opens the same two actions', async ({ page }) => {
+  await page.addInitScript(() => { navigator.share = async (d) => { window.__gedeeld = d; }; });
   await open(page);
   await zaai(page, ['Alfa', 'Beta']);
-  const knop = page.locator('#lijst li').first().locator('.scheur');
-  await expect(knop).toHaveAccessibleName('Tear out: Alfa');
+  const li = page.locator('#lijst li').first();
+  const knop = li.locator('.rijmenu');
+  await expect(knop).toHaveAccessibleName('Actions: Alfa');
+  await expect(knop).toHaveAttribute('aria-expanded', 'false');
   expect(await knop.evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
   await rijen(page).first().focus();
   await page.keyboard.press('Tab');
   await expect(knop).toBeFocused();
   expect(await knop.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
   await page.keyboard.press('Enter');
+  await expect(li).toHaveClass(/open/);
+  await expect(li.locator('.actie.delen')).toBeFocused();
+  // Escape sluit en zet de focus terug op de rij
+  await page.keyboard.press('Escape');
+  await expect(li).not.toHaveClass(/open/);
+  await expect(rijen(page).first()).toBeFocused();
+  // opnieuw, nu delen
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__gedeeld);
+  expect(await page.evaluate(() => window.__gedeeld.title)).toBe('Alfa');
+  // en uitscheuren
+  await rijen(page).first().focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(li.locator('.actie.weg')).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(rijen(page)).toHaveText(['Beta']);
   await expect(page.locator('#ongedaan')).toHaveText('Undo');
 });
 
-test('long-press (touch) or right-click shows the small "Tear out" action', async ({ page }, testInfo) => {
+test('long-press (touch) or right-click opens the actions', async ({ page }, testInfo) => {
   await open(page);
   await zaai(page, ['Alfa', 'Beta']);
   const li = page.locator('#lijst li').first();
   if (isMobiel(testInfo)) await langDrukken(page, li.locator('.rij'));
   else await li.locator('.rij').click({ button: 'right' });
-  await expect(li).toHaveClass(/gewapend/);
+  await expect(li).toHaveClass(/open/);
   await expect(page.locator('#blad')).toBeHidden();       // lang drukken opent het blaadje niet
-  await li.locator('.scheur').click();
+  await li.locator('.actie.weg').click();
   await expect(rijen(page)).toHaveText(['Beta']);
 });
 
-/* ---------------- lijnen: tekst op de lijnen ---------------- */
-
-test('text sits on the ruled lines: line-height equals the line spacing, rows follow the grid', async ({ page }) => {
+test('rows on the cover are big tap targets: at least 48px, no gaps, bold and a bit larger', async ({ page }) => {
   await open(page);
   await zaai(page, ['Een', 'Twee', 'Drie']);
-  const lijst = await page.evaluate(() => {
-    const vak = document.getElementById('lijstvak');
-    const cs = getComputedStyle(vak);
+  const r = await page.evaluate(() => {
     const lis = [...document.querySelectorAll('#lijst li')];
+    const rij = document.querySelector('#lijst .rij');
+    const cs = getComputedStyle(rij);
     return {
-      lh: parseFloat(getComputedStyle(document.querySelector('#lijst .rij')).lineHeight),
-      bg: parseFloat(cs.backgroundSize.split(' ')[1]),
-      att: cs.backgroundAttachment,
-      tops: lis.map((li) => li.offsetTop),
+      tops: lis.map((li) => li.getBoundingClientRect().top),
       h: lis.map((li) => li.getBoundingClientRect().height),
+      rijH: rij.getBoundingClientRect().height,
+      fs: parseFloat(cs.fontSize),
+      fw: parseInt(cs.fontWeight, 10),
+      body: parseFloat(getComputedStyle(document.body).fontSize),
     };
   });
-  expect(lijst.bg).toBeCloseTo(lijst.lh, 3);
-  expect(lijst.att).toBe('local');
-  lijst.h.forEach((h) => expect(h).toBeCloseTo(lijst.lh, 1));
-  lijst.tops.forEach((top, i) => expect(top).toBeCloseTo(i * lijst.lh, 1));
+  r.h.forEach((h) => expect(h).toBeGreaterThanOrEqual(48));
+  for (let i = 1; i < r.tops.length; i++) expect(r.tops[i] - r.tops[i - 1]).toBeCloseTo(r.h[i - 1], 1);   // geen gaten
+  expect(r.rijH).toBeGreaterThanOrEqual(r.h[0] - 1);    // de hele rij is de knop
+  expect(r.fs / r.body).toBeGreaterThanOrEqual(1.05);
+  expect(r.fs / r.body).toBeLessThanOrEqual(1.2);
+  expect(r.fw).toBeGreaterThanOrEqual(600);
+  // tikken net boven de onderrand van een rij opent die rij, niet de volgende
+  const box = await page.locator('#lijst li').nth(0).boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 3);
+  await expect(page.locator('#tekst')).toHaveValue('Een');
+});
+
+test('text sits on the ruled lines of a page: line-height equals the line spacing', async ({ page }) => {
+  await open(page);
+  await zaai(page, ['Een', 'Twee', 'Drie']);
 
   await rijen(page).first().click();
   const ta = page.locator('#tekst');
@@ -1103,16 +1219,35 @@ test('page flip animation over the top, and none with reduced motion', async ({ 
   expect(await page.evaluate(() => document.getElementById('begin').getAnimations().length)).toBe(0);
 });
 
+test('the cover is a deeper yellow than the paper, with readable text', async ({ page }) => {
+  await open(page);
+  const k = await page.evaluate(() => {
+    const kaart = getComputedStyle(document.getElementById('begin')).backgroundColor;
+    const blad = getComputedStyle(document.getElementById('blad')).backgroundColor;
+    const voet = getComputedStyle(document.getElementById('voet')).color;
+    return { kaart, blad, voet };
+  });
+  const rgb = (s) => s.match(/[\d.]+/g).slice(0, 3).map(Number);
+  const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  expect(lum(rgb(k.kaart))).toBeLessThan(lum(rgb(k.blad)) - 0.1);        // duidelijk donkerder
+  const contrast = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  expect(contrast(lum(rgb(k.voet)), lum(rgb(k.kaart)))).toBeGreaterThanOrEqual(4.5);   // WCAG AA
+  expect(contrast(lum([29, 41, 64]), lum(rgb(k.kaart)))).toBeGreaterThanOrEqual(7);
+});
+
 test('dark mode keeps the pad yellow and only darkens the desk', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await open(page);
   const k = await page.evaluate(() => ({
-    papier: getComputedStyle(document.getElementById('begin')).backgroundColor,
+    kaft: getComputedStyle(document.getElementById('begin')).backgroundColor,
+    papier: getComputedStyle(document.getElementById('blad')).backgroundColor,
     bureau: getComputedStyle(document.body).backgroundColor,
   }));
   const rgb = (s) => s.match(/\d+/g).map(Number);
   const [r, g, b] = rgb(k.papier);
   expect(r).toBeGreaterThan(200); expect(g).toBeGreaterThan(190); expect(b).toBeLessThan(170);   // geel
+  const [kr, kg, kb] = rgb(k.kaft);
+  expect(kr).toBeGreaterThan(190); expect(kg).toBeGreaterThan(150); expect(kb).toBeLessThan(110); // dieper geel
   const [br, bg, bb] = rgb(k.bureau);
   expect(br + bg + bb).toBeLessThan(150);   // donker bureau
 });

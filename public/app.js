@@ -232,9 +232,11 @@
   melding.addEventListener('click', verbergMelding);
 
   /* ================= de lijst ================= */
-  let gewapend = null;   // rij met zichtbaar uitscheur-knopje (na lang drukken)
+  let openLi = null;          // rij waarvan de acties (delen, uitscheuren) open staan
+  let slikVolgendeKlik = false;
 
   function toonLijst(focusId) {
+    openLi = null;
     const notities = alleNotities();
     lijst.textContent = '';
     for (const n of notities) lijst.appendChild(maakRij(n));
@@ -268,27 +270,75 @@
     hint.hidden = true;
   }
 
+  function icoon(d, grootte) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(grootte || 22));
+    svg.setAttribute('height', String(grootte || 22));
+    svg.setAttribute('aria-hidden', 'true');
+    const pad = document.createElementNS(ns, 'path');
+    pad.setAttribute('d', d);
+    pad.setAttribute('fill', 'none');
+    pad.setAttribute('stroke', 'currentColor');
+    pad.setAttribute('stroke-width', '2');
+    pad.setAttribute('stroke-linecap', 'round');
+    pad.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(pad);
+    return svg;
+  }
+  const ICOON_DELEN = 'M8.5 9.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-1.5M12 3v11.5M8.5 6.5 12 3l3.5 3.5';
+  const ICOON_WEG = 'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-12.5M10.5 11v6M13.5 11v6';
+  const ICOON_MEER = 'M5 12h.01M12 12h.01M19 12h.01';
+
+  // In welke richting schuift de rij opzij om de acties te tonen? (LTR naar links, RTL naar rechts)
+  const opzij = () => (document.documentElement.dir === 'rtl' ? 1 : -1);
+
   function maakRij(n) {
+    const titel = eersteRegel(n.t);
+    const kort = titel.slice(0, 60);
     const li = document.createElement('li');
     li.dataset.id = n.id;
+
+    const acties = document.createElement('div');
+    acties.className = 'acties';
+    const deelKnop = document.createElement('button');
+    deelKnop.type = 'button';
+    deelKnop.className = 'actie delen';
+    deelKnop.setAttribute('aria-label', t('share') + ': ' + kort);
+    deelKnop.title = t('share');
+    deelKnop.appendChild(icoon(ICOON_DELEN));
+    const wegKnop = document.createElement('button');
+    wegKnop.type = 'button';
+    wegKnop.className = 'actie weg';
+    wegKnop.setAttribute('aria-label', t('tear') + ': ' + kort);
+    wegKnop.title = t('tear');
+    wegKnop.appendChild(icoon(ICOON_WEG));
+    acties.append(deelKnop, wegKnop);
+
     const rij = document.createElement('button');
     rij.type = 'button';
     rij.className = 'rij';
     const span = document.createElement('span');
     span.dir = 'auto';
-    span.textContent = eersteRegel(n.t);
+    span.textContent = titel;
     rij.appendChild(span);
-    const scheur = document.createElement('button');
-    scheur.type = 'button';
-    scheur.className = 'scheur';
-    scheur.textContent = t('tear');
-    scheur.setAttribute('aria-label', t('tear') + ': ' + eersteRegel(n.t).slice(0, 60));
-    li.append(rij, scheur);
+
+    // voor toetsenbord en schermlezer: een klein menuknopje dat dezelfde twee acties opent
+    const menuKnop = document.createElement('button');
+    menuKnop.type = 'button';
+    menuKnop.className = 'rijmenu';
+    menuKnop.setAttribute('aria-label', t('actions') + ': ' + kort);
+    menuKnop.setAttribute('aria-expanded', 'false');
+    menuKnop.appendChild(icoon(ICOON_MEER, 20));
+
+    li.append(acties, rij, menuKnop);
 
     rij.addEventListener('click', (e) => {
       // de klik die de browser meteen na een veeg of lang drukken stuurt, telt niet
       if (performance.now() < (li._slikTot || 0)) { e.preventDefault(); return; }
-      if (gewapend) { ontwapen(); return; }
+      if (slikVolgendeKlik) { slikVolgendeKlik = false; return; }   // deze tik sloot een open rij
+      if (openLi === li) { sluitRij(false); return; }
       openBlad(n.id);
     });
     rij.addEventListener('keydown', (e) => {
@@ -298,43 +348,72 @@
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const ander = e.key === 'ArrowDown' ? li.nextElementSibling : li.previousElementSibling;
         if (ander) { e.preventDefault(); ander.querySelector('.rij').focus(); }
+      } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+        e.preventDefault();
+        openRij(li, true);
       }
     });
-    scheur.addEventListener('click', (e) => {
+    menuKnop.addEventListener('click', (e) => {
       e.stopPropagation();
-      scheurUit(n.id, li, 0);
+      if (openLi === li) sluitRij(true); else openRij(li, true);
     });
+    acties.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); sluitRij(true); }
+    });
+    deelKnop.addEventListener('click', (e) => { e.stopPropagation(); deel(n.id); });
+    wegKnop.addEventListener('click', (e) => { e.stopPropagation(); scheurUit(n.id, li, opzij()); });
     li.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      wapen(li);
+      openRij(li, false);
     });
-    veegbaar(li, n.id);
+    veegbaar(li);
     return li;
   }
 
-  function wapen(li) {
-    if (gewapend && gewapend !== li) gewapend.classList.remove('gewapend');
-    gewapend = li;
-    li.classList.add('gewapend');
+  function actieBreedte(li) {
+    return li.querySelector('.acties').offsetWidth || 124;
   }
-  function ontwapen() {
-    if (gewapend) gewapend.classList.remove('gewapend');
-    gewapend = null;
+  function openRij(li, focusActie) {
+    if (openLi && openLi !== li) sluitRij(false);
+    openLi = li;
+    li.classList.add('open');
+    li.querySelector('.rij').style.transform = 'translateX(' + (opzij() * actieBreedte(li)) + 'px)';
+    li.querySelector('.rijmenu').setAttribute('aria-expanded', 'true');
+    if (focusActie) li.querySelector('.actie.delen').focus({ preventScroll: true });
   }
+  function sluitRij(focusRij) {
+    const li = openLi;
+    if (!li) return;
+    openLi = null;
+    li.classList.remove('open');
+    li.querySelector('.rij').style.transform = '';
+    li.querySelector('.rijmenu').setAttribute('aria-expanded', 'false');
+    if (focusRij) li.querySelector('.rij').focus({ preventScroll: true });
+  }
+  // oude naam, nog gebruikt bij het openen van een blaadje en dergelijke
+  const ontwapen = () => sluitRij(false);
+
   document.addEventListener('pointerdown', (e) => {
-    if (gewapend && !gewapend.contains(e.target)) ontwapen();
+    slikVolgendeKlik = false;
+    if (openLi && !openLi.contains(e.target)) {
+      sluitRij(false);
+      // tikte je op een andere rij, dan sluit die tik alleen de open rij
+      if (e.target.closest && e.target.closest('#lijst .rij')) slikVolgendeKlik = true;
+    }
     if (!doneerPaneel.hidden && !doneerPaneel.contains(e.target) && !doneerKnop.contains(e.target)) sluitDoneer();
     if (!meerMenu.hidden && !meerMenu.contains(e.target) && !meerKnop.contains(e.target)) sluitMenu(false);
     if (!bevestig.hidden && !bevestig.contains(e.target)) sluitBevestig(false);
   }, true);
 
-  // Wegvegen met de vinger (of de muis): de rij volgt, voorbij de drempel wordt ze uitgescheurd.
-  function veegbaar(li, id) {
+  // Vegen met de vinger (of de muis): de rij schuift opzij en toont delen en uitscheuren.
+  // Een korte veeg klikt open, terugvegen (of ergens anders tikken) sluit weer.
+  function veegbaar(li) {
     const rij = li.querySelector('.rij');
     let start = null;
     let sleept = false;
     let lang = false;
     let langTimer = null;
+    let verschuiving = 0;
 
     const reset = () => {
       clearTimeout(langTimer);
@@ -344,8 +423,9 @@
     };
 
     li.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target.closest('.scheur')) return;
-      start = { x: e.clientX, y: e.clientY, tijd: performance.now(), id: e.pointerId };
+      if (e.button !== 0 || e.target.closest('.acties') || e.target.closest('.rijmenu')) return;
+      const basis = openLi === li ? opzij() * actieBreedte(li) : 0;
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId, basis };
       sleept = false;
       lang = false;
       clearTimeout(langTimer);
@@ -353,7 +433,7 @@
         langTimer = setTimeout(() => {
           if (start && !sleept) {
             lang = true;
-            wapen(li);
+            openRij(li, false);
             try { navigator.vibrate && navigator.vibrate(10); } catch {}
           }
         }, 550);
@@ -368,13 +448,16 @@
         if (Math.abs(dx) < 10) return;
         sleept = true;
         clearTimeout(langTimer);
-        ontwapen();
+        if (openLi && openLi !== li) sluitRij(false);   // maar één rij tegelijk open
         li.classList.add('sleept');
         try { li.setPointerCapture(e.pointerId); } catch {}
       }
       e.preventDefault();
-      rij.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 60).toFixed(2) + 'deg)';
-      rij.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / (li.clientWidth * 1.1)));
+      // in de richting van de acties tot net voorbij hun breedte, de andere kant op niet voorbij 0
+      const max = actieBreedte(li);
+      const naarOpen = Math.max(-12, Math.min(max + 24, (start.basis + dx) * opzij()));
+      verschuiving = naarOpen;
+      rij.style.transform = 'translateX(' + (opzij() * naarOpen) + 'px)';
     });
     const einde = (e) => {
       if (!start || e.pointerId !== start.id) return;
@@ -384,29 +467,58 @@
         reset();
         return;
       }
-      const dx = e.clientX - start.x;
-      const tijd = Math.max(1, performance.now() - start.tijd);
-      const snel = Math.abs(dx) / tijd > 0.6 && Math.abs(dx) > 40;
       li._slikTot = performance.now() + 60;
-      if (e.type !== 'pointercancel' && (Math.abs(dx) > li.clientWidth * 0.33 || snel)) {
-        scheurUit(id, li, dx < 0 ? -1 : 1);
-      } else {
-        terugOpZijnPlaats(li);
-      }
+      li.classList.remove('sleept');
+      const wasOpen = start.basis !== 0;
+      // korte veeg opent; vanuit open is een kleine veeg terug genoeg om te sluiten
+      const drempel = wasOpen ? actieBreedte(li) - 36 : 44;
+      if (e.type !== 'pointercancel' && verschuiving > drempel) openRij(li, false);
+      else { if (openLi === li) sluitRij(false); else rij.style.transform = ''; }
       reset();
     };
     li.addEventListener('pointerup', einde);
     li.addEventListener('pointercancel', einde);
   }
 
-  function terugOpZijnPlaats(li) {
-    const rij = li.querySelector('.rij');
-    const klaar = () => { rij.style.transform = ''; rij.style.opacity = ''; li.classList.remove('sleept'); };
-    if (beweging() && rij.animate) {
-      const a = rij.animate([{ transform: rij.style.transform || 'none', opacity: rij.style.opacity || 1 }, { transform: 'none', opacity: 1 }], { duration: 160, easing: 'ease-out' });
-      a.onfinish = klaar; a.oncancel = klaar;
-      klaar();
-    } else klaar();
+  /* ================= delen ================= */
+  async function kopieer(tekst) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(tekst);
+        return true;
+      }
+    } catch {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = tekst;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return !!ok;
+    } catch { return false; }
+  }
+  // Delen via het deelmenu van de telefoon (mail, WhatsApp ...); anders kopiëren.
+  async function deel(id) {
+    const n = leesNotitie(id);
+    const li = openLi;
+    if (!n) { toonLijst(null); return; }
+    let klaar = false;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: eersteRegel(n.t), text: n.t });
+        klaar = true;
+      } catch (e) {
+        if (e && e.name === 'AbortError') klaar = true;     // zelf afgebroken: niets aan de hand
+      }
+    }
+    if (!klaar) {
+      if (await kopieer(n.t)) toonBericht(t('copied'));
+      else toonMelding('share.fail');
+    }
+    if (openLi === li) sluitRij(false);
   }
 
   /* ================= uitscheuren en ongedaan maken ================= */
@@ -420,7 +532,7 @@
     const hadFocus = li && li.contains(document.activeElement);
     opslag.wis(NOTE + id);
     hintKlaar();
-    ontwapen();
+    openLi = null;
     toonStrookje(n);
 
     const naAfloop = () => {
@@ -432,7 +544,7 @@
     };
     if (li && beweging() && li.animate) {
       const rij = li.querySelector('.rij');
-      li.classList.add('sleept');
+      li.classList.add('scheurt');
       const r = richting || 1;
       const a = rij.animate([
         { transform: rij.style.transform || 'none', opacity: rij.style.opacity || 1 },

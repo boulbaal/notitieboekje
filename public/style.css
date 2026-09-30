@@ -36,6 +36,16 @@
   --schaduw: rgba(52, 38, 10, .30);
   --focus: #2a61b8;
 
+  /* de kaft: dieper, warmer geel karton */
+  --rij: 3.5rem;            /* 56px per blaadje in de lijst */
+  --kaft: #f0c953;
+  --kaft-licht: rgba(255, 244, 205, .40);
+  --kaft-rand: rgba(140, 95, 0, .28);
+  --kaft-lijn: rgba(105, 70, 0, .22);
+  --kaft-zacht: #5a4613;    /* kleine tekst op de kaft: contrast 5.7:1 */
+  --kaft-druk: rgba(105, 70, 0, .12);
+  --kaft-hover: rgba(255, 244, 205, .30);
+
   color-scheme: light;
 }
 
@@ -57,6 +67,13 @@
     --stapel-b: #e2d283;
     --schaduw: rgba(0, 0, 0, .62);
     --focus: #1f4f9e;
+    --kaft: #d4b24c;
+    --kaft-licht: rgba(255, 240, 190, .20);
+    --kaft-rand: rgba(90, 60, 0, .35);
+    --kaft-lijn: rgba(80, 55, 0, .28);
+    --kaft-zacht: #4a3a10;  /* contrast 5.4:1 */
+    --kaft-druk: rgba(80, 55, 0, .14);
+    --kaft-hover: rgba(255, 240, 190, .16);
     color-scheme: dark;
   }
 }
@@ -234,6 +251,32 @@ button { cursor: pointer; }
 .plus:hover { background: rgba(60, 50, 10, .07); }
 .plus:active { transform: scale(.94); }
 
+/* ---------- de kaft (beginpagina): dieper geel karton, geen lijntjes ---------- */
+.pagina.begin {
+  background-color: var(--kaft);
+  background-image:
+    linear-gradient(to bottom, rgba(90, 60, 0, .16), rgba(90, 60, 0, 0) 20px),
+    radial-gradient(140% 70% at 50% -10%, var(--kaft-licht), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='k'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .40 0 0 0 0 .28 0 0 0 0 .02 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23k)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Cfilter id='v'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.014' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .50 0 0 0 0 .34 0 0 0 0 .02 0 0 0 .10 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23v)'/%3E%3C/svg%3E");
+  box-shadow:
+    inset 0 0 0 1px var(--kaft-rand),
+    inset 0 0 30px rgba(140, 90, 0, .22),
+    inset 0 -16px 22px -16px rgba(110, 70, 0, .35);
+}
+.begin .kop {
+  border-bottom: 1px solid var(--kaft-lijn);
+  box-shadow: 0 1px 0 var(--kaft-licht);
+}
+.begin .kop h1 {
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-shadow: 0 1px 0 var(--kaft-licht);
+}
+.begin .plus:hover { background: var(--kaft-hover); }
+.begin .voet { color: var(--kaft-zacht); }
+.begin .voetknop:hover, .begin .ververs:hover { color: var(--inkt); }
+
 .lijstvak {
   position: relative;
   flex: 1 1 auto;
@@ -253,33 +296,44 @@ button { cursor: pointer; }
 }
 .lijst li {
   position: relative;
-  height: var(--lh);
+  height: var(--rij);
+  border-bottom: 1px solid var(--kaft-lijn);
+  overflow: hidden;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+/* de hele rij is het tikvlak: 56px hoog, zonder dode stroken ertussen */
 .rij {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
-  height: var(--lh);
+  height: 100%;
   padding: 0 22px;
   border: 0;
-  background: transparent;
+  background-color: transparent;
   text-align: start;
-  line-height: var(--lh);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: calc(var(--rij) - 1px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--inkt);
-  border-radius: 2px;
+  transition: transform .22s cubic-bezier(.2, .7, .3, 1), background-color .12s ease;
 }
 .rij span {
   unicode-bidi: plaintext;
 }
-.rij:hover { background: rgba(255, 255, 255, .22); }
+.rij:active { background-color: var(--kaft-druk); }
+@media (hover: hover) and (pointer: fine) {
+  .rij:hover { background-color: var(--kaft-hover); }
+}
 .rij:focus-visible,
-.scheur:focus-visible,
+.actie:focus-visible,
+.rijmenu:focus-visible,
 .plus:focus-visible,
 .terug:focus-visible,
 .voetknop:focus-visible,
@@ -291,36 +345,63 @@ button { cursor: pointer; }
 }
 .taal select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* uitscheur-knopje: onzichtbaar tot je er met het toetsenbord komt, met de muis over de rij gaat of lang drukt */
-.scheur {
+/* opzij geschoven: de rij is een stuk karton dat over de acties schuift */
+.lijst li.open .rij,
+.lijst li.sleept .rij {
+  background-color: var(--kaft);
+  box-shadow: 0 0 10px -3px rgba(60, 40, 0, .45);
+}
+.lijst li.sleept .rij { transition: none; }
+
+/* delen en uitscheuren, achter de rij */
+.acties {
   position: absolute;
+  top: 0; bottom: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 8px 10px;
+  visibility: hidden;
+}
+.lijst li.open .acties,
+.lijst li.sleept .acties { visibility: visible; }
+.actie {
+  width: 52px; height: 44px;
+  display: grid; place-items: center;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .18);
+}
+.actie.delen { background: #2a61b8; }
+.actie.weg { background: #b0392c; }
+.actie:active { transform: scale(.95); }
+
+/* voor toetsenbord en schermlezer: een klein menuknopje per rij (zichtbaar bij focus of muis erover) */
+.rijmenu {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
   inset-inline-end: 6px;
-  top: 2px;
-  height: calc(var(--lh) - 5px);
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: var(--papier);
-  color: #9b2c24;
-  font-size: .8rem;
-  line-height: 1;
+  width: 40px; height: 40px;
+  margin-top: -20px;
+  display: grid; place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--kaft);
+  color: var(--kaft-zacht);
   opacity: 0;
   pointer-events: none;
 }
-.lijst li:focus-within .scheur:focus-visible,
-.lijst li.gewapend .scheur {
-  opacity: 1;
-  pointer-events: auto;
-  border-color: rgba(155, 44, 36, .45);
-  box-shadow: 0 1px 3px rgba(60, 40, 0, .2);
-}
+.rijmenu:focus-visible { opacity: 1; pointer-events: auto; }
 @media (hover: hover) and (pointer: fine) {
-  .lijst li:hover .scheur { opacity: .55; pointer-events: auto; }
-  .lijst li:hover .scheur:hover { opacity: 1; border-color: rgba(155, 44, 36, .45); }
+  .lijst li:hover .rijmenu { opacity: .8; pointer-events: auto; }
 }
+.lijst li.open .rijmenu { visibility: hidden; }
 
-/* tijdens het wegvegen: een strookje papier dat meebeweegt */
-.lijst li.sleept .rij {
+/* uitscheuren: een strookje dat wegvliegt */
+.lijst li.scheurt .rij {
   background: var(--papier);
   box-shadow: 0 2px 8px rgba(60, 40, 0, .28);
   clip-path: polygon(0 8%, 4% 0, 8% 9%, 12% 1%, 16% 8%, 20% 0, 24% 7%, 28% 1%, 32% 9%, 36% 0, 40% 8%, 44% 2%, 48% 9%, 52% 0, 56% 7%, 60% 1%, 64% 9%, 68% 0, 72% 8%, 76% 2%, 80% 9%, 84% 0, 88% 7%, 92% 1%, 96% 8%, 100% 0, 100% 100%, 0 100%);
@@ -328,9 +409,10 @@ button { cursor: pointer; }
 
 .leeg, .hint {
   margin: 0;
-  padding: 0 22px;
-  color: var(--potlood);
-  line-height: var(--lh);
+  padding: 14px 22px 0;
+  color: var(--kaft-zacht);
+  font-size: .95rem;
+  line-height: 1.45;
 }
 
 /* ---------- voet (klein en rustig) ---------- */
@@ -692,6 +774,6 @@ button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .strookje, .strookje.zichtbaar { transition: none; }
+  .strookje, .strookje.zichtbaar, .rij { transition: none; }
   .ververs.bezig svg { animation: none; }
 }
