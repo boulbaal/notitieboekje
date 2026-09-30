@@ -498,6 +498,57 @@ button { cursor: pointer; }
 .meermenu button:hover { background: #f3f0e0; }
 .meermenu button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
+.meermenu button.gevaar {
+  margin-top: 4px;
+  border-top: 1px dashed rgba(160, 50, 40, .35);
+  color: #8f2a20;
+}
+.meermenu button.gevaar svg { color: #b0392c; }
+
+/* ---------- alles wissen: bevestigen op een briefje ---------- */
+.bevestig {
+  position: absolute;
+  left: 14px; right: 14px;
+  bottom: calc(var(--onder) - 2px);
+  z-index: 4;
+  padding: 16px 16px 10px;
+  background: #fffdf2;
+  color: #22252b;
+  border-radius: 2px;
+  border-top: 3px solid rgba(192, 57, 43, .55);
+  box-shadow: 0 12px 28px -8px rgba(40, 28, 0, .5), 0 1px 2px rgba(0, 0, 0, .15);
+  transform: rotate(-.5deg);
+  font-size: .92rem;
+  line-height: 1.45;
+}
+.bevestig[hidden] { display: none; }
+.bevestig p { margin: 0 0 8px; }
+.bevestig-titel { font-weight: 650; font-size: 1rem; color: #7a2418; }
+.bevestig-tekst { color: #45474d; }
+.bevestig-knoppen { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.bevestig-knoppen button {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: .9rem;
+  font-weight: 600;
+}
+.bevestig-nee { border: 1.5px solid #2a61b8; background: transparent; color: #1f4f9e; }
+.bevestig-nee:hover { background: #eaf1fc; }
+.bevestig-ja { border: 1.5px solid #b0392c; background: #b0392c; color: #fff; }
+.bevestig-ja:hover { background: #962f24; }
+.bevestig-export {
+  display: block;
+  margin: 10px 0 0 auto;
+  padding: 6px 2px;
+  border: 0;
+  background: transparent;
+  color: #1f4f9e;
+  font-size: .84rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bevestig button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 /* ---------- doneren: een los briefje ---------- */
 .doneerpaneel {
   position: absolute;

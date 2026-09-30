@@ -87,6 +87,19 @@
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3.5V15M7.5 10.5 12 15l4.5-4.5M5 13.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span id="importTekst">Import</span>
           </button>
+          <button type="button" role="menuitem" id="wisKnop" class="gevaar" tabindex="-1">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-12.5M10.5 11v6M13.5 11v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="wisTekst">Erase everything</span>
+          </button>
+        </div>
+        <div class="bevestig" id="bevestig" role="alertdialog" aria-modal="true" aria-labelledby="bevestigTitel" aria-describedby="bevestigTekst" hidden>
+          <p class="bevestig-titel" id="bevestigTitel">Erase everything?</p>
+          <p class="bevestig-tekst" id="bevestigTekst">This can’t be undone. Export first if you want to keep something.</p>
+          <div class="bevestig-knoppen">
+            <button type="button" class="bevestig-nee" id="wisNee">Cancel</button>
+            <button type="button" class="bevestig-ja" id="wisJa">Erase all</button>
+          </div>
+          <button type="button" class="bevestig-export" id="wisExport">Export first</button>
         </div>
         <input class="sr" type="file" id="importBestand" accept=".json,.memo,.txt,application/json,text/plain,application/octet-stream" tabindex="-1" aria-hidden="true">
       </section>

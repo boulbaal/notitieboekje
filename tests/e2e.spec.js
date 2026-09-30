@@ -790,14 +790,14 @@ test('import a MEMOBK2 backup (synthetic): right count, texts, timestamps and or
   await open(page);
   await zaai(page, ['Al aanwezig']);
   await importeer(page, '2026-09-30 15.16.40.500-3F2504E0-4F89-41D3-9A0C-0305E82C3301.memo', maakMemo(VOORBEELD));
-  // 9 records: 1 leeg (overgeslagen), 1 dubbel binnen het bestand
-  await expect(page.locator('#melding')).toHaveText('7 pages added, 1 was already there');
+  // 8 gewone records (1 leeg, 1 dubbel binnen het bestand) en 2 verwijderde (prullenbak)
+  await expect(page.locator('#melding')).toHaveText('6 pages added, 1 was already there, 2 deleted pages skipped');
   const n = await alleOpgeslagen(page);
-  expect(n).toHaveLength(8);
+  expect(n).toHaveLength(7);
+  expect(n.some((x) => x.t.includes('eggegooid'))).toBe(false);
   const perTekst = Object.fromEntries(n.map((x) => [x.t, x]));
   expect(perTekst['Boodschappen\nmelk\nbrood']).toMatchObject({ c: T.boodschappen, u: T.boodschappen });
   expect(perTekst['Tandarts vrijdag 10u']).toMatchObject({ c: T.tandarts, u: T.tandartsGewijzigd });
-  expect(perTekst['Oud briefje van lang geleden']).toMatchObject({ c: T.oud, u: T.oud });
   expect(perTekst['Rare datum, wel een wijzigtijd']).toMatchObject({ c: T.raar, u: T.raar });
   expect(perTekst['🎉 Feestje 👨‍👩‍👧 zaterdag']).toBeTruthy();
   expect(perTekst['Café crème, ½ liter, € 3,50']).toBeTruthy();
@@ -810,13 +810,15 @@ test('import a MEMOBK2 backup (synthetic): right count, texts, timestamps and or
     'مرحبا بالعالم',
     'Tandarts vrijdag 10u',
     'Rare datum, wel een wijzigtijd',
-    'Oud briefje van lang geleden',
   ]);
   expect(await rijen(page).nth(4).locator('span').evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
   // plural in het Pools: 7 = "many", 2..4 = "few"
   await page.locator('#taal').selectOption('pl');
   await importeer(page, 'b.memo', maakMemo([{ text: 'Nowa jeden', a: -T.tandarts }, { text: 'Nowa dwa', a: -T.tandarts }]));
   await expect(page.locator('#melding')).toHaveText('2 kartki dodane');
+  await page.locator('#taal').selectOption('nl');
+  await importeer(page, 'c.memo', maakMemo([{ text: 'Nieuw', a: -T.tandarts }, { text: 'Weg', a: T.weg1 }]));
+  await expect(page.locator('#melding')).toHaveText('1 blaadje toegevoegd, 1 verwijderd blaadje overgeslagen');
 });
 
 test('a corrupt file shows an error and imports nothing', async ({ page }) => {
@@ -855,9 +857,11 @@ test('the ⋯ menu: keyboard, Escape returns focus, closes on outside tap, fits 
   await expect(menu).toBeVisible();
   await expect(knop).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('#exportKnop')).toBeFocused();
-  await expect(page.getByRole('menuitem')).toHaveText(['Export', 'Import']);
+  await expect(page.getByRole('menuitem')).toHaveText(['Export', 'Import', 'Erase everything']);
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('#importKnop')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#wisKnop')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('#exportKnop')).toBeFocused();
   await page.keyboard.press('Escape');
@@ -882,10 +886,85 @@ test('the ⋯ menu: keyboard, Escape returns focus, closes on outside tap, fits 
   await page.locator('#taal').selectOption('nl');
   await expect(knop).toHaveAttribute('aria-label', 'Meer');
   await knop.click();
-  await expect(page.getByRole('menuitem')).toHaveText(['Exporteren', 'Importeren']);
+  await expect(page.getByRole('menuitem')).toHaveText(['Exporteren', 'Importeren', 'Alles wissen']);
   if (isMobiel(testInfo)) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
+});
+
+/* ---------------- alles wissen ---------------- */
+
+test('erase everything: Cancel (default) keeps all, Escape too; confirming wipes notes but keeps settings', async ({ page }) => {
+  await open(page);
+  await zaai(page, ['Een', 'Twee', 'Drie']);
+  await page.evaluate(() => {
+    localStorage.setItem('notitieboekje.lang', 'nl');
+    localStorage.setItem('notitieboekje.install.dicht', String(Date.now()));
+  });
+  await page.reload();
+  const slip = page.locator('#bevestig');
+  await kiesUitMenu(page, 'wisKnop');
+  await expect(slip).toBeVisible();
+  await expect(slip).toHaveAttribute('role', 'alertdialog');
+  await expect(page.locator('#bevestigTitel')).toHaveText('Alles wissen?');
+  await expect(page.locator('#bevestigTekst')).toHaveText('Dit kan niet ongedaan worden. Exporteer eerst als je iets wilt bewaren.');
+  await expect(page.locator('#wisNee')).toBeFocused();
+  await expect(page.locator('#wisNee')).toHaveText('Annuleren');
+  await expect(page.locator('#wisJa')).toHaveText('Wis alles');
+  // Enter op de standaardknop = annuleren
+  await page.keyboard.press('Enter');
+  await expect(slip).toBeHidden();
+  await expect(page.locator('#meerKnop')).toBeFocused();
+  expect(await opgeslagen(page)).toBe(3);
+  // Escape = annuleren; Tab blijft op het briefje
+  await kiesUitMenu(page, 'wisKnop');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#wisJa')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#wisExport')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#wisNee')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(slip).toBeHidden();
+  expect(await opgeslagen(page)).toBe(3);
+  // naast het briefje tikken = annuleren
+  await kiesUitMenu(page, 'wisKnop');
+  await page.locator('#titel').click();
+  await expect(slip).toBeHidden();
+  expect(await opgeslagen(page)).toBe(3);
+  // bevestigen
+  await kiesUitMenu(page, 'wisKnop');
+  await page.locator('#wisJa').click();
+  await expect(slip).toBeHidden();
+  await expect(rijen(page)).toHaveCount(0);
+  await expect(page.locator('#leeg')).toBeVisible();
+  await expect(page.locator('#melding')).toHaveText('Notitieboekje gewist');
+  expect(await opgeslagen(page)).toBe(0);
+  const inst = await page.evaluate(() => [localStorage.getItem('notitieboekje.lang'), localStorage.getItem('notitieboekje.install.dicht')]);
+  expect(inst[0]).toBe('nl');
+  expect(inst[1]).toBeTruthy();
+  await page.reload();
+  await expect(rijen(page)).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+});
+
+test('erase everything: "Export first" exports, and another tab empties too', async ({ page, context }) => {
+  await page.addInitScript(zonderDelen);
+  await open(page);
+  await zaai(page, ['Een', 'Twee']);
+  const b = await context.newPage();
+  await b.goto('/');
+  await expect(rijen(b)).toHaveCount(2);
+  await kiesUitMenu(page, 'wisKnop');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#wisExport').click()]);
+  const data = JSON.parse(require('fs').readFileSync(await dl.path(), 'utf8'));
+  expect(data.notes.map((n) => n.text).sort()).toEqual(['Een', 'Twee']);
+  await expect(page.locator('#bevestig')).toBeVisible();     // na exporteren kan je nog kiezen
+  await page.locator('#wisJa').click();
+  await expect(rijen(page)).toHaveCount(0);
+  await expect(rijen(b)).toHaveCount(0);
+  await expect(b.locator('#leeg')).toBeVisible();
+  await b.close();
 });
 
 /* ---------------- offline, opslag en randgevallen ---------------- */

@@ -166,6 +166,9 @@
   const meerKnop = $('meerKnop');
   const meerMenu = $('meerMenu');
   const importBestand = $('importBestand');
+  const bevestig = $('bevestig');
+  const wisNee = $('wisNee');
+  const wisJa = $('wisJa');
 
   /* ================= lijnen precies onder de basislijn ================= */
   // We meten waar de basislijn van het lettertype in een regel valt en zetten de lijn
@@ -322,6 +325,7 @@
     if (gewapend && !gewapend.contains(e.target)) ontwapen();
     if (!doneerPaneel.hidden && !doneerPaneel.contains(e.target) && !doneerKnop.contains(e.target)) sluitDoneer();
     if (!meerMenu.hidden && !meerMenu.contains(e.target) && !meerKnop.contains(e.target)) sluitMenu(false);
+    if (!bevestig.hidden && !bevestig.contains(e.target)) sluitBevestig(false);
   }, true);
 
   // Wegvegen met de vinger (of de muis): de rij volgt, voorbij de drempel wordt ze uitgescheurd.
@@ -483,6 +487,7 @@
     if (uitgescheurd) verbergStrookje();
     sluitDoneer();
     sluitMenu(false);
+    sluitBevestig(false);
     ontwapen();
     try { history.pushState({ nb: 'blad' }, ''); } catch {}
     // eerst het blaadje zichtbaar (onder de beginpagina) en de focus erin, dan omslaan:
@@ -590,11 +595,18 @@
     }
     // Het open blaadje laten we met rust: wat je hier typt gaat niet verloren
     // (per blaadje wint de laatste die bewaart). De lijst werken we wel bij.
-    if (!begin.hidden && blad.hidden) {
-      const focusId = document.activeElement && document.activeElement.closest && document.activeElement.closest('li[data-id]');
-      toonLijst(focusId ? focusId.dataset.id : null);
-    }
+    // (veel wijzigingen tegelijk, zoals alles wissen in een ander tabblad: één keer tekenen)
+    if (lijstVerversGepland) return;
+    lijstVerversGepland = true;
+    setTimeout(() => {
+      lijstVerversGepland = false;
+      if (!begin.hidden && blad.hidden) {
+        const focusId = document.activeElement && document.activeElement.closest && document.activeElement.closest('li[data-id]');
+        toonLijst(focusId ? focusId.dataset.id : null);
+      }
+    }, 30);
   });
+  let lijstVerversGepland = false;
 
   /* ================= voet: taal, doneren, versie, verversen ================= */
   function bouwTaalKeuze() {
@@ -657,6 +669,12 @@
     meerKnop.title = t('more');
     $('exportTekst').textContent = t('export');
     $('importTekst').textContent = t('import');
+    $('wisTekst').textContent = t('wipe');
+    $('bevestigTitel').textContent = t('wipe.title');
+    $('bevestigTekst').textContent = t('wipe.text');
+    wisNee.textContent = t('wipe.cancel');
+    wisJa.textContent = t('wipe.confirm');
+    $('wisExport').textContent = t('wipe.export');
     vulDoneer();
     if (strookje.classList.contains('zichtbaar')) {
       strookjeTekst.textContent = t('torn');
@@ -701,7 +719,7 @@
   doneerKnop.addEventListener('click', (e) => {
     e.stopPropagation();
     const open = doneerPaneel.hidden;
-    if (open) { sluitMenu(false); verbergMelding(); }
+    if (open) { sluitMenu(false); sluitBevestig(false); verbergMelding(); }
     doneerPaneel.hidden = !open;
     doneerKnop.setAttribute('aria-expanded', String(open));
     if (open) { const eerste = doneerPaneel.querySelector('a'); if (eerste) eerste.focus({ preventScroll: true }); }
@@ -747,6 +765,7 @@
   const menuItems = () => Array.from(meerMenu.querySelectorAll('[role="menuitem"]'));
   function openMenu() {
     sluitDoneer();
+    sluitBevestig(false);
     verbergMelding();
     meerMenu.hidden = false;
     meerKnop.setAttribute('aria-expanded', 'true');
@@ -850,6 +869,7 @@
     if (r.vol) { toonMelding('quota'); return; }
     let bericht = t('import.added', { n: r.toegevoegd });
     if (r.dubbel > 0) bericht += t('import.sep') + t('import.skipped', { n: r.dubbel });
+    if (gelezen.verwijderd > 0) bericht += t('import.sep') + t('import.deleted', { n: gelezen.verwijderd });
     toonBericht(bericht);
   }
   $('exportKnop').addEventListener('click', () => { sluitMenu(false); meerKnop.focus({ preventScroll: true }); exporteer(); });
@@ -859,6 +879,48 @@
     importBestand.value = '';
     importBestand.click();
   });
+
+  // Alles wissen: eerst bevestigen op een briefje (Annuleren heeft de focus).
+  // Taal en het gesloten installatiebriefje blijven bewaard.
+  function openBevestig() {
+    sluitMenu(false);
+    sluitDoneer();
+    verbergMelding();
+    bevestig.hidden = false;
+    wisNee.focus({ preventScroll: true });
+  }
+  function sluitBevestig(focusTerug) {
+    if (bevestig.hidden) return;
+    bevestig.hidden = true;
+    if (focusTerug) meerKnop.focus({ preventScroll: true });
+  }
+  function wisAlles() {
+    for (const k of opslag.sleutels()) if (k.startsWith(NOTE)) opslag.wis(k);
+    if (uitgescheurd) verbergStrookje();
+    sluitBevestig(false);
+    toonLijst(null);
+    plus.focus({ preventScroll: true });
+    toonBericht(t('wipe.done'));
+  }
+  $('wisKnop').addEventListener('click', openBevestig);
+  wisNee.addEventListener('click', () => sluitBevestig(true));
+  wisJa.addEventListener('click', wisAlles);
+  $('wisExport').addEventListener('click', () => { exporteer(); });
+  bevestig.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      sluitBevestig(true);
+    } else if (e.key === 'Tab') {
+      // de focus blijft op het briefje
+      const knoppen = Array.from(bevestig.querySelectorAll('button'));
+      const i = knoppen.indexOf(document.activeElement);
+      const j = e.shiftKey ? (i <= 0 ? knoppen.length - 1 : i - 1) : (i + 1) % knoppen.length;
+      e.preventDefault();
+      knoppen[j].focus();
+    }
+  });
+
   importBestand.addEventListener('change', () => {
     const f = importBestand.files && importBestand.files[0];
     importBestand.value = '';
