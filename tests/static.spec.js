@@ -39,9 +39,26 @@ test('23 languages, each with every key and the same placeholders as English', (
     expect(Object.keys(TEKSTEN[code]).sort(), 'keys of ' + code).toEqual(sleutels);
     for (const k of sleutels) {
       const s = TEKSTEN[code][k];
+      const en = TEKSTEN.en[k];
+      if (typeof en === 'object') {
+        // meervoudsvormen: elke vorm die de taal kent (Intl.PluralRules) plus 'other'
+        expect(typeof s, code + ' ' + k).toBe('object');
+        const nodig = new Set([...new Intl.PluralRules(code).resolvedOptions().pluralCategories, 'other']);
+        for (const vorm of nodig) {
+          expect(typeof s[vorm], code + ' ' + k + ' mist vorm ' + vorm).toBe('string');
+          expect(s[vorm].trim().length).toBeGreaterThan(0);
+        }
+        for (const vorm of Object.keys(s)) {
+          expect(['zero', 'one', 'two', 'few', 'many', 'other'], code + ' ' + k).toContain(vorm);
+          // een vorm mag het getal weglaten ("één pagina"), maar geen andere plaatshouders hebben
+          for (const ph of plaatshouders(s[vorm]).split(',').filter(Boolean)) expect(plaatshouders(en.other)).toContain(ph);
+        }
+        expect(plaatshouders(s.other), code + ' ' + k + ' other').toBe(plaatshouders(en.other));
+        continue;
+      }
       expect(typeof s, code + ' ' + k).toBe('string');
       expect(s.trim().length, code + ' ' + k + ' is empty').toBeGreaterThan(0);
-      expect(plaatshouders(s), code + ' ' + k + ' placeholders').toBe(plaatshouders(TEKSTEN.en[k]));
+      expect(plaatshouders(s), code + ' ' + k + ' placeholders').toBe(plaatshouders(en));
     }
     // de merknaam blijft in elke taal hetzelfde
     expect(TEKSTEN[code]['donate.intro'], code).toContain('Notitieboekje');
@@ -82,7 +99,7 @@ test('no e-mail addresses and no em dashes in the project', () => {
 });
 
 test('no external resources in the app files', () => {
-  for (const f of ['index.html', 'style.css', 'app.js', 'sw.js', 'i18n.js']) {
+  for (const f of ['index.html', 'style.css', 'app.js', 'sw.js', 'i18n.js', 'import.js']) {
     const s = fs.readFileSync(path.join(PUBLIC, f), 'utf8');
     // enkel links naar PayPal (doneren) en de eigen site (meta/OG) mogen een volledige URL hebben
     const urls = (s.match(/https?:\/\/[^\s'"`)<>]+/g) || [])
@@ -96,8 +113,10 @@ test('no external resources in the app files', () => {
 });
 
 test('user text never goes through innerHTML', () => {
-  const app = fs.readFileSync(path.join(PUBLIC, 'app.js'), 'utf8');
-  expect(app).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
+  for (const f of ['app.js', 'import.js']) {
+    const code = fs.readFileSync(path.join(PUBLIC, f), 'utf8');
+    expect(code).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
+  }
 });
 
 test('headers: strict CSP and the basic security headers', () => {
@@ -155,4 +174,91 @@ test('version placeholder is where deploy.mjs expects it, and the SW caches ever
   expect(toml).toMatch(/name = "notitieboekje"/);
   expect(toml).toMatch(/directory = "\.\/public"/);
   expect(toml).not.toMatch(/^main\s*=/m);
+});
+
+/* ---------------- export en import (zonder browser) ---------------- */
+
+const { maakMemo, VOORBEELD, T } = require('./memo-maker');
+function laadImport() {
+  const sandbox = { self: {}, TextDecoder, DataView, Uint8Array, BigInt, Date, JSON, Math, Number, Array, String, Error };
+  vm.runInNewContext(fs.readFileSync(path.join(PUBLIC, 'import.js'), 'utf8'), sandbox);
+  return sandbox.self.NB_IMPORT;
+}
+const ab = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+const NU = Date.UTC(2026, 8, 30, 12, 0);
+
+test('MEMOBK2 (synthetic): every record read, trimmed, empty skipped, timestamps right', () => {
+  const IO = laadImport();
+  const r = IO.lees(ab(maakMemo(VOORBEELD)), '2026-09-30 15.16.40.500-3F2504E0.memo', 0, NU);
+  expect(r.soort).toBe('memo');
+  expect(r.notes.map((n) => n.text)).toEqual([
+    'Boodschappen\nmelk\nbrood',
+    'Tandarts vrijdag 10u',
+    'Café crème, ½ liter, € 3,50',
+    '🎉 Feestje 👨‍👩‍👧 zaterdag',
+    'مرحبا بالعالم\nسطر ثان',
+    'Boodschappen\nmelk\nbrood',
+    'Rare datum, wel een wijzigtijd',
+    'Oud briefje van lang geleden',
+  ]);
+  const n = r.notes;
+  expect([n[0].created, n[0].updated]).toEqual([T.boodschappen, T.boodschappen]);    // C = 0
+  expect([n[1].created, n[1].updated]).toEqual([T.tandarts, T.tandartsGewijzigd]);  // met uuid en C
+  expect([n[6].created, n[6].updated]).toEqual([T.raar, T.raar]);                   // onzin-A: terug op C
+  expect([n[7].created, n[7].updated]).toEqual([T.oud, T.oud]);                     // positieve A
+  // onzin-A en geen C: nu
+  const r2 = IO.lees(ab(maakMemo([{ text: 'x', a: -5000 }])), 'a.memo', 0, NU);
+  expect(r2.notes[0].created).toBe(NU);
+});
+
+test('MEMOBK2: a damaged file is refused as a whole', () => {
+  const IO = laadImport();
+  const goed = maakMemo(VOORBEELD);
+  const varianten = {
+    afgekapt: goed.subarray(0, goed.length - 50),
+    halverwege: goed.subarray(0, 300),
+    'verkeerd aantal in de voet': maakMemo(VOORBEELD, { aantal: 3 }),
+    'tekstlengte voorbij het einde': maakMemo([{ text: 'kort', a: -T.tandarts, lengte: 1e9 }]),
+    'negatieve tekstlengte': maakMemo([{ text: 'kort', a: -T.tandarts, lengte: -1 }]),
+    'onbekende versie': maakMemo(VOORBEELD, { versie: 3 }),
+    'rommel achteraan': Buffer.concat([goed, Buffer.from('xx')]),
+    'geen voet': goed.subarray(0, goed.length - 40),
+  };
+  for (const [naam, buf] of Object.entries(varianten)) {
+    expect(() => IO.lees(ab(buf), 'x.memo', 0, NU), naam).toThrow();
+  }
+  // een ander merk midden in het bestand
+  const kapot = Buffer.from(goed);
+  kapot.write('XXXX', 16, 'latin1');
+  expect(() => IO.lees(ab(kapot), 'x.memo', 0, NU)).toThrow();
+  // ongeldige UTF-8 in een tekst
+  const utf = maakMemo([{ text: 'ab', a: -T.tandarts }]);
+  utf[16 + 12 + 40] = 0xff;
+  expect(() => IO.lees(ab(utf), 'x.memo', 0, NU)).toThrow();
+});
+
+test('own JSON: export and import give the same notes; other files are handled', () => {
+  const IO = laadImport();
+  const notities = [
+    { id: 'abc123', t: 'Eerste\nregel twee', u: T.tandartsGewijzigd, c: T.tandarts },
+    { id: 'def456', t: '🎉 <b>geen html</b>', u: T.boodschappen, c: T.boodschappen },
+  ];
+  const data = IO.maakExport(notities, NU);
+  expect(data.format).toBe('notitieboekje');
+  expect(data.version).toBe(1);
+  expect(data.exported).toBe(new Date(NU).toISOString());
+  expect(data.notes[0]).toEqual({ id: 'abc123', text: 'Eerste\nregel twee', created: T.tandarts, updated: T.tandartsGewijzigd });
+  const r = IO.lees(ab(Buffer.from(JSON.stringify(data))), 'notitieboekje-2026-09-30.json', 0, NU);
+  expect(r.soort).toBe('json');
+  expect(r.notes).toEqual(data.notes);
+
+  // gewone tekst = één blaadje (met BOM en slotregels weg)
+  const txt = IO.lees(ab(Buffer.from('﻿Lijstje\nnog iets\n\n')), 'lijst.txt', T.tandarts, NU);
+  expect(txt.notes).toEqual([{ text: 'Lijstje\nnog iets', created: T.tandarts, updated: T.tandarts }]);
+  // geweigerd: kapotte JSON, vreemde JSON, binaire rommel, ongeldige notitie
+  expect(() => IO.lees(ab(Buffer.from('{"format":"notitieboekje",')), 'a.json', 0, NU)).toThrow();
+  expect(() => IO.lees(ab(Buffer.from('{"iets":"anders"}')), 'a.json', 0, NU)).toThrow();
+  expect(() => IO.lees(ab(Buffer.from([0, 1, 2, 255, 254, 0])), 'a.bin', 0, NU)).toThrow();
+  expect(() => IO.lees(ab(Buffer.from('{"format":"notitieboekje","version":1,"notes":[{"text":5}]}')), 'a.json', 0, NU)).toThrow();
+  expect(() => IO.lees(ab(Buffer.from('gewone tekst')), 'a.memo', 0, NU)).toThrow();
 });
