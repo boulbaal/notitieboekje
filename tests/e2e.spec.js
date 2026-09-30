@@ -513,9 +513,6 @@ test('refresh button installs a newly deployed version immediately', async ({ pa
   await terug(page);
   try {
     await request.get('/__stamp?v=test2');
-    await page.reload();
-    // zonder verversen blijft (uit de cache) de oude versie staan
-    await expect(page.locator('#versie')).toHaveText('vtest1');
     await Promise.all([
       page.waitForEvent('load', { timeout: 15000 }),
       page.locator('#ververs').click(),
@@ -524,6 +521,80 @@ test('refresh button installs a newly deployed version immediately', async ({ pa
     await expect(rijen(page)).toHaveText(['Blijft bewaard bij het verversen']);
     const caches = await page.evaluate(() => caches.keys());
     expect(caches).toEqual(['notitieboekje-test2']);
+  } finally {
+    await request.get('/__stamp?v=test1');
+  }
+});
+
+// Laat de app naar een nieuwe versie zoeken zoals bij terugkeren naar de app.
+const zoekNieuweVersie = (page) => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+test('a new version on the home page is picked up by itself (no click)', async ({ page, request }) => {
+  await open(page);
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller);
+  await nieuwBlad(page, 'Blijft staan na de update');
+  await terug(page);
+  await expect(page.locator('#versie')).toHaveText('vtest1');
+  try {
+    await request.get('/__stamp?v=test2');
+    await Promise.all([
+      page.waitForEvent('load', { timeout: 15000 }),
+      zoekNieuweVersie(page),
+    ]);
+    await expect(page.locator('#versie')).toHaveText('vtest2', { timeout: 10000 });
+    await expect(rijen(page)).toHaveText(['Blijft staan na de update']);
+    // en geen herlaadlus: de nieuwe versie blijft gewoon staan
+    await page.evaluate(() => { window.__nogHier = 1; });
+    await zoekNieuweVersie(page);
+    await page.waitForTimeout(1000);
+    expect(await page.evaluate(() => window.__nogHier)).toBe(1);
+  } finally {
+    await request.get('/__stamp?v=test1');
+  }
+});
+
+test('with a page open, a new version waits: no reload while typing, reload after going back', async ({ page, request }) => {
+  await open(page);
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller);
+  await nieuwBlad(page, 'Ik schrijf');
+  try {
+    await request.get('/__stamp?v=test2');
+    await zoekNieuweVersie(page);
+    await page.waitForFunction(() => window.notitieboekje.updateKlaar === true, null, { timeout: 15000 });
+    await page.evaluate(() => { window.__nogHier = 1; });
+    await page.keyboard.type(' gewoon verder');
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate(() => window.__nogHier)).toBe(1);
+    await expect(page.locator('#tekst')).toHaveValue('Ik schrijf gewoon verder');
+    await expect(page.locator('#versie')).toHaveText('vtest1');
+    await Promise.all([
+      page.waitForEvent('load', { timeout: 15000 }),
+      page.locator('#terug').click(),
+    ]);
+    await expect(page.locator('#versie')).toHaveText('vtest2', { timeout: 10000 });
+    await expect(rijen(page)).toHaveText(['Ik schrijf gewoon verder']);
+  } finally {
+    await request.get('/__stamp?v=test1');
+  }
+});
+
+test('with a page open, a new version reloads when the app is hidden, after saving', async ({ page, request }) => {
+  await open(page);
+  await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller);
+  await nieuwBlad(page, 'Net voor het wegleggen');
+  try {
+    await request.get('/__stamp?v=test2');
+    await zoekNieuweVersie(page);
+    await page.waitForFunction(() => window.notitieboekje.updateKlaar === true, null, { timeout: 15000 });
+    await Promise.all([
+      page.waitForEvent('load', { timeout: 15000 }),
+      page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }),
+    ]);
+    await expect(page.locator('#versie')).toHaveText('vtest2', { timeout: 10000 });
+    await expect(rijen(page)).toHaveText(['Net voor het wegleggen']);
   } finally {
     await request.get('/__stamp?v=test1');
   }

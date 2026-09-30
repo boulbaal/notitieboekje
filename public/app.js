@@ -514,7 +514,7 @@
     const r = id && lijst.querySelector('li[data-id="' + CSS.escape(id) + '"] .rij');
     if (r) r.focus({ preventScroll: true }); else plus.focus({ preventScroll: true });
     if (tekst === document.activeElement) tekst.blur();
-    slaOm(begin, 'terug', () => { blad.hidden = true; tekst.value = ''; });
+    slaOm(begin, 'terug', () => { blad.hidden = true; tekst.value = ''; probeerUpdateHerladen(); });
   }
   let terugViaHistorie = false;
   window.addEventListener('popstate', () => {
@@ -547,7 +547,15 @@
 
   /* ================= bewaren bij weggaan ================= */
   window.addEventListener('pagehide', bewaar);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bewaar(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      bewaar();
+      // staat er een nieuwe versie klaar, dan is dit een veilig moment (alles is bewaard)
+      if (nieuweVersie) herlaadVoorUpdate();
+    } else {
+      zoekUpdate();
+    }
+  });
   window.addEventListener('beforeunload', bewaar);
 
   /* ================= twee tabbladen ================= */
@@ -684,6 +692,7 @@
   ververs.addEventListener('click', async () => {
     if (ververs.classList.contains('bezig')) return;
     ververs.classList.add('bezig');
+    handmatig = true;
     bewaar();
     try {
       if ('serviceWorker' in navigator) {
@@ -706,14 +715,49 @@
     location.reload();
   });
 
+  /* ================= nieuwe versies: vanzelf bijwerken ================= */
+  // De service worker zoekt bij het starten, bij terugkeren naar de app en elk half uur
+  // naar een nieuwe versie. Neemt die het over, dan herladen we op een veilig moment:
+  // meteen op de beginpagina, anders pas als je teruggaat of de app verlaat.
+  // Nooit tijdens het typen, en altijd eerst bewaren.
+  let registratie = null;
+  let nieuweVersie = false;
+  let handmatig = false;
+  async function zoekUpdate() {
+    if (!registratie || navigator.onLine === false) return;
+    try { await registratie.update(); } catch {}
+  }
+  function herlaadVoorUpdate() {
+    if (!nieuweVersie || handmatig) return;
+    // tegen een herlaadlus: per (oude) versie hoogstens één keer vanzelf herladen
+    const sleutel = PREFIX + 'auto.' + VERSIE;
+    try {
+      if (window.sessionStorage.getItem(sleutel)) return;
+      window.sessionStorage.setItem(sleutel, '1');
+    } catch {}
+    bewaar();
+    location.reload();
+  }
+  function probeerUpdateHerladen() {
+    if (!nieuweVersie) return;
+    if (blad.hidden && document.activeElement !== tekst) herlaadVoorUpdate();
+  }
+
   function serviceWorker() {
     if (!('serviceWorker' in navigator)) return;
-    const hadController = !!navigator.serviceWorker.controller;
+    let hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      // een nieuwe versie staat klaar: toon een klein stipje bij verversen
-      if (hadController) ververs.classList.add('nieuw');
+      // de eerste keer (eerste bezoek) neemt de service worker alleen de pagina over: niets te verversen
+      if (!hadController) { hadController = true; return; }
+      nieuweVersie = true;
+      ververs.classList.add('nieuw');
+      window.notitieboekje.updateKlaar = true;
+      probeerUpdateHerladen();
     });
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((r) => { registratie = r; zoekUpdate(); })
+      .catch(() => {});
+    setInterval(zoekUpdate, 30 * 60 * 1000);
   }
 
   /* ================= start ================= */
