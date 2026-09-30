@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://notitieboekje.vanali.workers.dev/sitemap.xml
