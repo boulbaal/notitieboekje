@@ -10,7 +10,8 @@ Open it and it feels like holding a small yellow reporter's notebook: spiral bin
 - **Just write.** Enter is a new line. Everything is saved while you type. A small arrow at the bottom takes you back.
 - **Tear a page out** by swiping it aside. Changed your mind? Tap "Undo" within five seconds. A page you leave empty is simply not kept. Keyboard and screen reader users: press Delete on a page, or use the hidden "Tear out" button; long-press shows it on touch screens.
 - **Everything stays on your device.** No login, no server, no database, no sync, no backup, no analytics, no requests to other sites. Your pages live in your browser's local storage and nowhere else. Clearing your browser data erases them.
-- **Works offline** after the first visit and installs as an app (PWA).
+- **Works offline** after the first visit and installs as an app (PWA). On phones a small note clipped to the pad offers to put it on your home screen (a button on Android, the Share steps on iPhone). Close it and it stays away for two weeks.
+- **Updates itself.** A new version is picked up in the background and loaded at a calm moment: right away on the list of pages, or once you leave a page. Never while you type, and your text is always saved first.
 - **23 languages**, picked from your browser: English, Dutch, French, German, Spanish, Portuguese, Polish, Ukrainian, Russian, Turkish, Arabic, Urdu, Hindi, Bengali, Indonesian, Vietnamese, Chinese, Japanese, Korean, Swahili, Tamazight (Tifinagh), Kurdish and Shona. Right-to-left for Arabic and Urdu.
 - **Light.** Plain HTML, CSS and JavaScript, no framework, no build step. The only bundled font is Noto Sans Tifinagh (SIL Open Font License), because most devices lack it.
 - **Open source (MIT)** on Cloudflare Workers static assets; fits easily in the free plan.
