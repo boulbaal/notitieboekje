@@ -12,9 +12,11 @@
  *              int64 A, int64 0, int64 C (wijzigtijd in ms of 0),
  *              int64 vlag, int64 tekstlengte, tekst (UTF-8), 32 bytes (hash, genegeerd)
  *      voet:   "M2FO", uint32 aantal records, 32 bytes (controlegetal, genegeerd)
- *      Het bestand bevat twee lijsten: records met negatieve A zijn de gewone notities
- *      (aanmaaktijd = -A, nieuwste eerst); een blok records met positieve A achteraan
- *      (oplopend) is de prullenbak van die app. Die verwijderde notities slaan we over.
+ *      Het bestand bevat twee lijsten. Zoals Ali's oude app ze opsloeg: het blok records
+ *      met positieve A achteraan (oplopend) zijn de notities om te houden (aanmaaktijd = A);
+ *      de records met negatieve A (vooraan) had die app als verwijderd gemarkeerd.
+ *      Die slaan we over en tellen we (alleen niet-lege). A = 0 komt in de praktijk niet
+ *      voor; we behandelen het als onbekend en slaan het ook over.
  *   Bij elke fout in de structuur wordt het hele bestand geweigerd (niets half importeren).
  */
 'use strict';
@@ -89,11 +91,12 @@
       nodig(32); p += 32;
       records++;
 
-      // positieve A: een verwijderde notitie (prullenbak van de andere app)
-      if (a >= 0n) { verwijderd++; continue; }
       tekst = zonderSlotRegels(tekst);
-      if (tekst.trim() === '') continue;
-      const aangemaakt = -Number(a);
+      const leeg = tekst.trim() === '';
+      // A <= 0: door de oude app als verwijderd gemarkeerd (of onbekend): niet importeren
+      if (a <= 0n) { if (!leeg) verwijderd++; continue; }
+      if (leeg) continue;
+      const aangemaakt = Number(a);
       const gewijzigd = Number(c);
       const created = geldigeTijd(aangemaakt, nu) ? aangemaakt : (gewijzigd > 0 && geldigeTijd(gewijzigd, nu) ? gewijzigd : nu);
       const updated = gewijzigd > 0 ? gewijzigd : created;

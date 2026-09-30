@@ -790,11 +790,11 @@ test('import a MEMOBK2 backup (synthetic): right count, texts, timestamps and or
   await open(page);
   await zaai(page, ['Al aanwezig']);
   await importeer(page, '2026-09-30 15.16.40.500-3F2504E0-4F89-41D3-9A0C-0305E82C3301.memo', maakMemo(VOORBEELD));
-  // 8 gewone records (1 leeg, 1 dubbel binnen het bestand) en 2 verwijderde (prullenbak)
+  // te houden: 8 records (1 leeg, 1 dubbel binnen het bestand); als verwijderd gemarkeerd: 2 (+1 leeg)
   await expect(page.locator('#melding')).toHaveText('6 pages added, 1 was already there, 2 deleted pages skipped');
   const n = await alleOpgeslagen(page);
   expect(n).toHaveLength(7);
-  expect(n.some((x) => x.t.includes('eggegooid'))).toBe(false);
+  expect(n.some((x) => x.t.startsWith('Verwijderd'))).toBe(false);
   const perTekst = Object.fromEntries(n.map((x) => [x.t, x]));
   expect(perTekst['Boodschappen\nmelk\nbrood']).toMatchObject({ c: T.boodschappen, u: T.boodschappen });
   expect(perTekst['Tandarts vrijdag 10u']).toMatchObject({ c: T.tandarts, u: T.tandartsGewijzigd });
@@ -805,19 +805,19 @@ test('import a MEMOBK2 backup (synthetic): right count, texts, timestamps and or
   await expect(rijen(page)).toHaveText([
     'Al aanwezig',
     'Boodschappen',
-    'Café crème, ½ liter, € 3,50',
-    '🎉 Feestje 👨‍👩‍👧 zaterdag',
     'مرحبا بالعالم',
+    '🎉 Feestje 👨‍👩‍👧 zaterdag',
+    'Café crème, ½ liter, € 3,50',
     'Tandarts vrijdag 10u',
     'Rare datum, wel een wijzigtijd',
   ]);
-  expect(await rijen(page).nth(4).locator('span').evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
+  expect(await rijen(page).nth(2).locator('span').evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
   // plural in het Pools: 7 = "many", 2..4 = "few"
   await page.locator('#taal').selectOption('pl');
-  await importeer(page, 'b.memo', maakMemo([{ text: 'Nowa jeden', a: -T.tandarts }, { text: 'Nowa dwa', a: -T.tandarts }]));
+  await importeer(page, 'b.memo', maakMemo([{ text: 'Nowa jeden', a: T.tandarts }, { text: 'Nowa dwa', a: T.tandarts + 1 }]));
   await expect(page.locator('#melding')).toHaveText('2 kartki dodane');
   await page.locator('#taal').selectOption('nl');
-  await importeer(page, 'c.memo', maakMemo([{ text: 'Nieuw', a: -T.tandarts }, { text: 'Weg', a: T.weg1 }]));
+  await importeer(page, 'c.memo', maakMemo([{ text: 'Weg', a: -T.weg1 }, { text: 'Nieuw', a: T.tandarts }]));
   await expect(page.locator('#melding')).toHaveText('1 blaadje toegevoegd, 1 verwijderd blaadje overgeslagen');
 });
 

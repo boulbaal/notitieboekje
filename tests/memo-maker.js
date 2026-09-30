@@ -39,27 +39,32 @@ function maakMemo(records, opties = {}) {
   return Buffer.concat(delen);
 }
 
-// Een voorbeeld met alle randgevallen: 8 gewone records (negatieve A) en 2 verwijderde. Tijden zijn vast, zodat de testen ze kunnen nagaan.
+// Een voorbeeld met alle randgevallen, opgebouwd zoals Ali's oude app het opsloeg:
+// vooraan een blok met negatieve A (door die app als verwijderd gemarkeerd: niet importeren),
+// achteraan een blok met positieve A, oplopend (de notities om te houden).
+// Tijden zijn vast, zodat de testen ze kunnen nagaan.
 const T = {
   boodschappen: Date.UTC(2026, 8, 20, 9, 30),
   tandarts: Date.UTC(2026, 8, 10, 14, 0),
   tandartsGewijzigd: Date.UTC(2026, 8, 12, 8, 15),
-  weg1: Date.UTC(2021, 2, 3, 12, 0),       // prullenbak (positieve A)
+  weg1: Date.UTC(2021, 2, 3, 12, 0),
   weg2: Date.UTC(2024, 6, 1, 9, 0),
   raar: Date.UTC(2023, 5, 6, 7, 8),        // onzin-A, alleen C klopt
 };
 const VOORBEELD = [
-  { text: 'Boodschappen\nmelk\nbrood\n', a: -T.boodschappen },
-  { text: 'Tandarts vrijdag 10u', a: -T.tandarts, c: T.tandartsGewijzigd, uuid: true },
-  { text: 'Café crème, ½ liter, € 3,50', a: -(T.boodschappen - 60000) },
-  { text: '🎉 Feestje 👨‍👩‍👧 zaterdag\n\n', a: -(T.boodschappen - 120000), uuid: true },
-  { text: 'مرحبا بالعالم\nسطر ثان', a: -(T.boodschappen - 180000) },
-  { text: '\n\n', a: -(T.boodschappen - 240000) },            // leeg na inkorten: overslaan
-  { text: 'Boodschappen\nmelk\nbrood', a: -(T.boodschappen - 300000) },   // zelfde tekst: dubbel
-  { text: 'Rare datum, wel een wijzigtijd', a: -5000, c: T.raar },
-  // de prullenbak van de andere app: een blok met positieve A achteraan, oplopend
-  { text: 'Weggegooid briefje', a: T.weg1 },
-  { text: 'Nog een weggegooid briefje', a: T.weg2, uuid: true, c: T.weg2 + 1000 },
+  // als verwijderd gemarkeerd (negatieve A): 2 niet-lege worden geteld, de lege niet
+  { text: 'Verwijderd: oude boodschappen', a: -T.weg2 },
+  { text: 'Verwijderd: afspraak', a: -T.weg1, uuid: true, c: T.weg1 + 1000 },
+  { text: '\n', a: -(T.weg1 - 1000) },
+  // te houden (positieve A, oplopend)
+  { text: 'Rare datum, wel een wijzigtijd', a: 5000, c: T.raar },
+  { text: 'Tandarts vrijdag 10u', a: T.tandarts, c: T.tandartsGewijzigd, uuid: true },
+  { text: 'Café crème, ½ liter, € 3,50', a: T.boodschappen - 240000 },
+  { text: '🎉 Feestje 👨‍👩‍👧 zaterdag\n\n', a: T.boodschappen - 180000, uuid: true },
+  { text: 'مرحبا بالعالم\nسطر ثان', a: T.boodschappen - 120000 },
+  { text: '\n\n', a: T.boodschappen - 60000 },                          // leeg na inkorten: overslaan
+  { text: 'Boodschappen\nmelk\nbrood\n', a: T.boodschappen },
+  { text: 'Boodschappen\nmelk\nbrood', a: T.boodschappen + 60000 },      // zelfde tekst: dubbel
 ];
 
 module.exports = { maakMemo, VOORBEELD, T };
