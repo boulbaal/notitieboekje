@@ -1,0 +1,9 @@
+# Notitieboekje: alleen statische bestanden (Workers Static Assets).
+# Geen worker-code, geen database: alle notities blijven op het toestel.
+name = "notitieboekje"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[assets]
+directory = "./public"
+not_found_handling = "single-page-application"

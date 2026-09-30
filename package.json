@@ -1,0 +1,19 @@
+{
+  "name": "notitieboekje",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A small yellow pocket notebook for your phone. No account, no ads, everything stays on your device.",
+  "license": "MIT",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "test": "playwright test",
+    "icons": "python3 tools/gen_icons.py",
+    "shots": "node tools/shots.mjs",
+    "deploy": "node tools/deploy.mjs",
+    "deploy:dirty": "node tools/deploy.mjs --allow-dirty"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "wrangler": "^4"
+  }
+}
