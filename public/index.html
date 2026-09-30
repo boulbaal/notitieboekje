@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Notitieboekje</title>
+<meta name="description" content="A little yellow notebook. Everything stays on your device. No account, no ads, free.">
+<meta name="theme-color" content="#d8d2c6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Notitieboekje">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="canonical" href="https://notitieboekje.vanali.workers.dev/">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Notitieboekje">
+<meta property="og:title" content="Notitieboekje">
+<meta property="og:description" content="A little yellow notebook. Everything stays on your device. No account, no ads, free.">
+<meta property="og:url" content="https://notitieboekje.vanali.workers.dev/">
+<meta property="og:image" content="https://notitieboekje.vanali.workers.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="/style.css">
+<script src="/i18n.js" defer></script>
+<script src="/app.js" defer></script>
+</head>
+<body>
+<main class="bureau" id="bureau">
+  <div class="blok" id="blok">
+    <div class="bladen" id="bladen">
+
+      <!-- Beginpagina: de lijst van je blaadjes -->
+      <section class="pagina begin" id="begin" aria-labelledby="titel">
+        <header class="kop">
+          <h1 id="titel">Notitieboekje</h1>
+          <button class="plus" id="plus" type="button" aria-label="New page" title="New page">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 4.5v15M4.5 12h15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </header>
+        <div class="lijnen lijstvak" id="lijstvak">
+          <ul class="lijst" id="lijst" aria-label="Your pages" aria-describedby="lijstHulp"></ul>
+          <p class="leeg" id="leeg" hidden></p>
+          <p class="hint" id="hint" hidden></p>
+          <p class="sr" id="lijstHulp"></p>
+        </div>
+        <footer class="voet" id="voet">
+          <button class="voetknop" id="doneerKnop" type="button" aria-expanded="false" aria-controls="doneerPaneel">Donate</button>
+          <span class="stip" aria-hidden="true">·</span>
+          <label class="taal">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></g></svg>
+            <select id="taal" aria-label="Choose language"></select>
+          </label>
+          <span class="stip" aria-hidden="true">·</span>
+          <span class="versie" id="versie">dev</span>
+          <button class="ververs" id="ververs" type="button" aria-label="Update to the latest version" title="Update to the latest version">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V9h-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </footer>
+        <div class="doneerpaneel" id="doneerPaneel" hidden></div>
+      </section>
+
+      <!-- Een blaadje: gewoon schrijven -->
+      <section class="pagina blad" id="blad" hidden>
+        <div class="kop kop-leeg" aria-hidden="true"></div>
+        <label class="sr" for="tekst" id="tekstLabel">Page</label>
+        <textarea class="lijnen tekst" id="tekst" dir="auto" spellcheck="true" autocapitalize="sentences" autocomplete="off"></textarea>
+        <div class="bladvoet">
+          <button class="terug" id="terug" type="button" aria-label="Back to your pages" title="Back to your pages">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M19 12H5.5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+    </div>
+    <div class="spiraal" aria-hidden="true"></div>
+    <div class="strookje" id="strookje" role="status" aria-live="polite">
+      <span id="strookjeTekst"></span>
+      <button type="button" id="ongedaan">Undo</button>
+    </div>
+    <p class="melding" id="melding" role="alert"></p>
+  </div>
+
+</main>
+<noscript><p class="noscript">Notitieboekje needs JavaScript to keep your notes on this device.</p></noscript>
+</body>
+</html>
