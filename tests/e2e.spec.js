@@ -40,6 +40,15 @@ async function nieuwBlad(page, tekst) {
     }
   }
 }
+// verder schrijven in een geopend blaadje: op de telefoon eerst in de tekst tikken
+// (focus zonder de cursor te verplaatsen), op de computer staat de focus er al
+async function schrijfVerder(page, testInfo) {
+  if (isMobiel(testInfo)) {
+    await expect(page.locator('#tekst')).not.toBeFocused();
+    await page.locator('#tekst').focus();
+  }
+  await expect(page.locator('#tekst')).toBeFocused();
+}
 async function terug(page) {
   await page.locator('#terug').click();
   await expect(page.locator('#begin')).toBeVisible();
@@ -87,7 +96,7 @@ async function langDrukken(page, locator) {
 
 /* ---------------- schrijven en bewaren ---------------- */
 
-test('write a note with Enter lines, go back: home shows the first line; reload keeps it', async ({ page }) => {
+test('write a note with Enter lines, go back: home shows the first line; reload keeps it', async ({ page }, testInfo) => {
   await open(page);
   await expect(page.locator('#leeg')).toBeVisible();
   await nieuwBlad(page, 'Boodschappen\nmelk\nbrood');
@@ -101,7 +110,7 @@ test('write a note with Enter lines, go back: home shows the first line; reload 
   await expect(rijen(page).first()).toHaveText('Boodschappen');
   await rijen(page).first().click();
   await expect(page.locator('#tekst')).toHaveValue('Boodschappen\nmelk\nbrood');
-  await expect(page.locator('#tekst')).toBeFocused();
+  await schrijfVerder(page, testInfo);
   // de cursor staat aan het eind: verder schrijven gaat meteen
   await page.keyboard.press('Enter');
   await page.keyboard.type('kaas');
@@ -130,6 +139,7 @@ test('editing a note updates its preview and moves it to the top', async ({ page
   await terug(page);
   await expect(rijen(page)).toHaveText(['Tweede', 'Eerste']);
   await rijen(page).nth(1).click();
+  await page.locator('#tekst').focus();
   await page.keyboard.press('Control+Home');
   await page.keyboard.type('Nu bovenaan: ');
   await terug(page);
@@ -217,7 +227,7 @@ test('150 notes: the list scrolls and the last one is reachable, the page itself
   expect(await page.evaluate(() => document.scrollingElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
 });
 
-test('a very long note opens, scrolls and saves', async ({ page }) => {
+test('a very long note opens at the top the first time, and later where you left it', async ({ page }) => {
   await open(page);
   const lang = Array.from({ length: 400 }, (_, i) => 'Regel ' + (i + 1) + ' ' + 'x'.repeat(40)).join('\n');
   await zaai(page, [lang]);
@@ -225,13 +235,111 @@ test('a very long note opens, scrolls and saves', async ({ page }) => {
   const ta = page.locator('#tekst');
   await expect(ta).toHaveValue(lang);
   expect(await ta.evaluate((el) => el.scrollHeight > el.clientHeight * 5)).toBe(true);
-  // de cursor staat aan het eind en dat stuk is in beeld
-  expect(await ta.evaluate((el) => el.scrollTop > 0)).toBe(true);
+  // de eerste keer: bovenaan lezen, de cursor achteraan
+  expect(await ta.evaluate((el) => [el.scrollTop, el.selectionStart])).toEqual([0, lang.length]);
+  await ta.focus();
   await page.keyboard.type('\nslot');
   await terug(page);
   const t = await page.evaluate(() => JSON.parse(localStorage.getItem('notitieboekje.n.z0000')).t);
   expect(t.endsWith('\nslot')).toBe(true);
   expect(t.length).toBe(lang.length + 5);
+  // ergens in het midden gaan staan en een stukje terug scrollen
+  await rijen(page).first().click();
+  const plek = await ta.evaluate((el) => {
+    el.focus();
+    el.setSelectionRange(5000, 5000);
+    el.scrollTop = Math.round(el.scrollHeight / 3);
+    return { p: el.selectionStart, s: el.scrollTop };
+  });
+  await terug(page);
+  // na herladen staat het er nog
+  await page.reload();
+  await rijen(page).first().click();
+  const terugPlek = await ta.evaluate((el) => ({ p: el.selectionStart, e: el.selectionEnd, s: el.scrollTop }));
+  expect(terugPlek.p).toBe(plek.p);
+  expect(terugPlek.e).toBe(plek.p);
+  expect(Math.abs(terugPlek.s - plek.s)).toBeLessThanOrEqual(1);
+  // openen en sluiten zonder te wijzigen verandert de volgorde en de wijzigtijd niet
+  const u = await page.evaluate(() => JSON.parse(localStorage.getItem('notitieboekje.n.z0000')).u);
+  await terug(page);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('notitieboekje.n.z0000')).u)).toBe(u);
+});
+
+test('opening an existing page on a phone does not pop up the keyboard; a new page does', async ({ page }, testInfo) => {
+  await open(page);
+  await zaai(page, ['Lezen']);
+  await rijen(page).first().click();
+  await expect(page.locator('#blad')).toBeVisible();
+  if (isMobiel(testInfo)) {
+    await expect(page.locator('#tekst')).not.toBeFocused();
+    await expect(page.locator('#terug')).toBeFocused();
+    // tikken in de tekst: dan pas schrijven
+    await page.locator('#tekst').tap();
+    await expect(page.locator('#tekst')).toBeFocused();
+  } else {
+    await expect(page.locator('#tekst')).toBeFocused();   // op de computer kan je meteen typen
+  }
+  await terug(page);
+  await page.locator('#plus').click();
+  await expect(page.locator('#tekst')).toBeFocused();
+});
+
+test('the date a page was started stands top right above the red line, in red, smaller and not bold', async ({ page }) => {
+  await open(page);
+  const c = Date.UTC(2025, 10, 25, 18, 19);
+  await page.evaluate((c) => {
+    localStorage.setItem('notitieboekje.n.d1', JSON.stringify({ t: 'Met datum', u: c + 1000, c }));
+    localStorage.setItem('notitieboekje.lang', 'nl');
+  }, c);
+  await page.reload();
+  await rijen(page).first().click();
+  const datum = page.locator('#aangemaakt');
+  await expect(datum).toBeVisible();
+  const verwacht = await page.evaluate((c) => new Intl.DateTimeFormat('nl', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(c)), c);
+  await expect(datum).toHaveText(verwacht);
+  await expect(datum).toHaveAttribute('datetime', new Date(c).toISOString());
+  await expect(datum).toHaveAttribute('aria-label', 'Begonnen op ' + verwacht);
+  const r = await page.evaluate(() => {
+    const d = document.getElementById('aangemaakt');
+    const ta = document.getElementById('tekst');
+    const kop = d.parentElement.getBoundingClientRect();
+    const b = d.getBoundingClientRect();
+    const cs = getComputedStyle(d);
+    return {
+      rechts: kop.right - b.right, boven: b.bottom <= ta.getBoundingClientRect().top + 1, links: b.left - kop.left,
+      kleur: cs.color, gewicht: Number(cs.fontWeight), grootte: parseFloat(cs.fontSize), tekstGrootte: parseFloat(getComputedStyle(ta).fontSize),
+    };
+  });
+  expect(r.rechts).toBeLessThan(30);
+  expect(r.links).toBeGreaterThan(100);
+  expect(r.boven).toBe(true);
+  const [rr, gg, bb] = r.kleur.match(/\d+/g).map(Number);
+  expect(rr).toBeGreaterThan(gg * 2);                 // rood
+  expect(rr).toBeGreaterThan(bb * 2);
+  expect(r.gewicht).toBeLessThan(600);                // niet vet
+  expect(r.grootte).toBeLessThan(r.tekstGrootte);     // kleiner dan de tekst
+  // de datum volgt de taal
+  await terug(page);
+  await page.locator('#taal').selectOption('en');
+  await rijen(page).first().click();
+  await expect(datum).toHaveAttribute('aria-label', /^Started on /);
+  // een nieuw blaadje toont meteen de datum van vandaag
+  await terug(page);
+  await page.locator('#plus').click();
+  await expect(datum).toHaveText(await page.evaluate(() => new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date())));
+});
+
+test('the text on a page is bigger than the rest, and still sits on the lines', async ({ page }) => {
+  await open(page);
+  await nieuwBlad(page, 'Groot');
+  const r = await page.evaluate(() => {
+    const ta = getComputedStyle(document.getElementById('tekst'));
+    return { fs: parseFloat(ta.fontSize), lh: parseFloat(ta.lineHeight), bg: parseFloat(ta.backgroundSize.split(' ')[1]), body: parseFloat(getComputedStyle(document.body).fontSize) };
+  });
+  expect(r.fs).toBe(21);
+  expect(r.lh).toBe(30);
+  expect(r.bg).toBe(30);
+  expect(r.body).toBe(17);
 });
 
 /* ---------------- uitscheuren ---------------- */
@@ -532,7 +640,7 @@ test('text stays on the lines when zoomed (bigger root font size)', async ({ pag
     const cs = getComputedStyle(el);
     return { lh: parseFloat(cs.lineHeight), bg: parseFloat(cs.backgroundSize.split(' ')[1]), ry: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ry')) };
   });
-  expect(r.lh).toBeCloseTo(22 * 1.75, 1);
+  expect(r.lh).toBeCloseTo(22 * 1.875, 1);
   expect(r.bg).toBeCloseTo(r.lh, 3);
   expect(r.ry).toBeGreaterThan(r.lh * 0.55);
   expect(r.ry).toBeLessThan(r.lh);
@@ -1192,8 +1300,10 @@ test('two tabs: the list follows the other tab, and an open page is not overwrit
   await expect(rijen(page)).toHaveText(['Uit tab B']);
   // A opent het blaadje en typt; B wijzigt hetzelfde blaadje intussen
   await rijen(page).first().click();
+  await page.locator('#tekst').focus();
   await page.keyboard.type(' plus A');
   await rijen(b).first().click();
+  await b.locator('#tekst').focus();
   await b.keyboard.type(' plus B');
   await terug(b);
   await expect(page.locator('#tekst')).toHaveValue('Uit tab B plus A');

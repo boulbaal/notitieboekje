@@ -19,6 +19,7 @@
   const K_LANG = PREFIX + 'lang';
   const K_HINT = PREFIX + 'hint';
   const K_PERSIST = PREFIX + 'persist';
+  const PLEK = PREFIX + 'pos.';   // per blaadje: waar de cursor stond en hoe ver gescrold
   const BEWAAR_NA = 300;       // ms na de laatste toetsaanslag
   const ONGEDAAN_MS = 5000;    // zo lang blijft "ongedaan maken" staan
   const MAX_VOORBEELD = 200;   // tekens in de lijst (de rest valt toch weg met ...)
@@ -603,14 +604,66 @@
     sluitBevestig(false);
     ontwapen();
     try { history.pushState({ nb: 'blad' }, ''); } catch {}
-    // eerst het blaadje zichtbaar (onder de beginpagina) en de focus erin, dan omslaan:
-    // zo komt op de telefoon meteen het toetsenbord op.
+    toonAangemaakt();
     blad.hidden = false;
-    tekst.focus({ preventScroll: true });
-    const eind = tekst.value.length;
-    try { tekst.setSelectionRange(eind, eind); } catch {}
-    tekst.scrollTop = tekst.scrollHeight;
+    // Een nieuw blaadje: meteen schrijven (toetsenbord op). Een bestaand blaadje open je
+    // vooral om te lezen: op een telefoon geen toetsenbord, dat komt pas als je in de
+    // tekst tikt. De cursor en het scrollen staan waar je ze de vorige keer liet.
+    const plek = n ? leesPlek(n.id, n.t.length) : { p: 0, e: 0, s: 0 };
+    const schrijven = !n || !isAanraak();
+    if (schrijven) tekst.focus({ preventScroll: true });
+    else terug.focus({ preventScroll: true });
+    try { tekst.setSelectionRange(plek.p, plek.e); } catch {}
+    tekst.scrollTop = plek.s;
     slaOm(begin, 'weg', () => { if (huidig) begin.hidden = true; });
+  }
+
+  // telefoon of tablet: aanraken, geen muis
+  function isAanraak() {
+    try { return window.matchMedia('(hover: none) and (pointer: coarse)').matches; } catch { return false; }
+  }
+
+  function leesPlek(id, lengte) {
+    try {
+      const v = JSON.parse(opslag.lees(PLEK + id) || 'null');
+      if (v && typeof v === 'object') {
+        const p = Math.max(0, Math.min(lengte, Number(v.p) || 0));
+        const e = Math.max(p, Math.min(lengte, Number(v.e) || p));
+        return { p, e, s: Math.max(0, Number(v.s) || 0) };
+      }
+    } catch {}
+    // nog nooit open geweest: bovenaan lezen, de cursor achteraan om verder te schrijven
+    return { p: lengte, e: lengte, s: 0 };
+  }
+  function bewaarPlek() {
+    if (!huidig || blad.hidden) return;
+    if (tekst.value.trim() === '') { opslag.wis(PLEK + huidig.id); return; }
+    const v = { p: tekst.selectionStart || 0, e: tekst.selectionEnd || 0, s: Math.round(tekst.scrollTop) };
+    opslag.schrijf(PLEK + huidig.id, JSON.stringify(v));
+  }
+  // plekken van blaadjes die er niet meer zijn opruimen
+  function ruimPlekkenOp() {
+    for (const k of opslag.sleutels()) {
+      if (k.startsWith(PLEK) && opslag.lees(NOTE + k.slice(PLEK.length)) === null) opslag.wis(k);
+    }
+  }
+
+  // de datum waarop het blaadje begonnen is, rechtsboven
+  const aangemaakt = $('aangemaakt');
+  function toonAangemaakt() {
+    const c = huidig && huidig.c;
+    if (!c) { aangemaakt.textContent = ''; aangemaakt.removeAttribute('datetime'); aangemaakt.removeAttribute('aria-label'); return; }
+    const d = new Date(c);
+    let tekstDatum;
+    try {
+      tekstDatum = new Intl.DateTimeFormat(taal, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d);
+    } catch {
+      tekstDatum = d.toLocaleString();
+    }
+    aangemaakt.textContent = tekstDatum;
+    aangemaakt.setAttribute('datetime', d.toISOString());
+    aangemaakt.setAttribute('aria-label', t('created', { date: tekstDatum }));
+    aangemaakt.title = aangemaakt.getAttribute('aria-label');
   }
 
   function bewaar() {
@@ -635,13 +688,15 @@
     clearTimeout(bewaarTimer);
     bewaarTimer = setTimeout(bewaar, BEWAAR_NA);
   });
-  tekst.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); naarBegin(); }
+  // Escape: terug naar de lijst, ook als de focus niet in de tekst staat (lezen)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented && !blad.hidden) { e.preventDefault(); naarBegin(); }
   });
 
   function naarBegin(vanHistorie) {
     if (blad.hidden) return;
     bewaar();
+    bewaarPlek();
     const id = huidig && huidig.bewaard.trim() !== '' ? huidig.id : null;
     huidig = null;
     if (!vanHistorie && history.state && history.state.nb === 'blad') {
@@ -866,10 +921,11 @@
   }
 
   /* ================= bewaren bij weggaan ================= */
-  window.addEventListener('pagehide', bewaar);
+  window.addEventListener('pagehide', () => { bewaar(); bewaarPlek(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       bewaar();
+      bewaarPlek();
       // staat er een nieuwe versie klaar, dan is dit een veilig moment (alles is bewaard)
       if (nieuweVersie) herlaadVoorUpdate();
     } else {
@@ -948,6 +1004,7 @@
     $('lijstHulp').textContent = t('list.help');
     $('tekstLabel').textContent = t('note');
     tekst.placeholder = t('placeholder');
+    if (!blad.hidden) toonAangemaakt();
     leeg.textContent = t('empty');
     taalKeuze.setAttribute('aria-label', t('lang.pick'));
     taalKeuze.title = t('lang.pick');
@@ -1188,7 +1245,7 @@
     if (focusTerug) meerKnop.focus({ preventScroll: true });
   }
   function wisAlles() {
-    for (const k of opslag.sleutels()) if (k.startsWith(NOTE)) opslag.wis(k);
+    for (const k of opslag.sleutels()) if (k.startsWith(NOTE) || k.startsWith(PLEK)) opslag.wis(k);
     if (uitgescheurd) verbergStrookje();
     sluitBevestig(false);
     toonLijst(null);
@@ -1434,6 +1491,7 @@
   }
 
   /* ================= start ================= */
+  ruimPlekkenOp();
   meetLijn();
   volgHoogte();
   bouwTaalKeuze();

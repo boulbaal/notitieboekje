@@ -14,7 +14,9 @@
 
 :root {
   --fs: 1.0625rem;          /* 17px */
-  --lh: 1.75rem;            /* 28px: regelhoogte = lijnafstand */
+  --lh: 1.75rem;            /* 28px: regelhoogte van de knoppen en menu's */
+  --tfs: 1.3125rem;         /* 21px: de tekst op een blaadje, goed leesbaar op de gsm */
+  --tlh: 1.875rem;          /* 30px: regelhoogte = lijnafstand op een blaadje */
   --ry: 21px;               /* lijn net onder de basislijn (app.js meet dit na) */
   --kop: 46px;              /* bovenmarge van een blaadje, boven de eerste lijn */
   --gaatjes: 24px;          /* strook met de spiraalgaatjes */
@@ -46,6 +48,7 @@
   --kaft-druk: rgba(105, 70, 0, .12);
   --kaft-hover: rgba(255, 244, 205, .30);
   --kaft-achter: #e8d48e;
+  --datum: #a8322b;          /* rood op het gele papier: contrast 5.6:1 */
 
   color-scheme: light;
 }
@@ -76,6 +79,7 @@
     --kaft-druk: rgba(80, 55, 0, .14);
     --kaft-hover: rgba(255, 240, 190, .16);
     --kaft-achter: #cdbb7c;
+    --datum: #94241e;
     color-scheme: dark;
   }
 }
@@ -258,7 +262,7 @@ button { cursor: pointer; }
     var(--lijn) var(--ry),
     var(--lijn) calc(var(--ry) + 1px),
     transparent calc(var(--ry) + 1px));
-  background-size: 100% var(--lh);
+  background-size: 100% var(--tlh);
   background-repeat: repeat-y;
   background-attachment: local;
   background-position: 0 0;
@@ -713,7 +717,20 @@ button { cursor: pointer; }
 .doneer-vrij { display: inline-block; margin-top: 10px; color: #1f4f9e; }
 
 /* ---------- een blaadje ---------- */
-.kop-leeg { padding: 0; }
+.kop-leeg {
+  justify-content: flex-end;
+  padding: 0 18px 7px 22px;
+}
+/* wanneer het blaadje begonnen is: rechtsboven, boven de rode lijn, in rood */
+.aangemaakt {
+  font-size: .9375rem;      /* 15px, kleiner dan de tekst zelf */
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--datum);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.aangemaakt:empty { display: none; }
 .tekst {
   flex: 1 1 auto;
   min-height: 0;
@@ -725,8 +742,8 @@ button { cursor: pointer; }
   resize: none;
   background-color: transparent;
   color: var(--inkt);
-  font-size: var(--fs);
-  line-height: var(--lh);
+  font-size: var(--tfs);
+  line-height: var(--tlh);
   overflow-y: auto;
   overflow-wrap: break-word;
   white-space: pre-wrap;
