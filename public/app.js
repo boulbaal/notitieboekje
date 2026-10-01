@@ -1267,7 +1267,12 @@
 
   /* ================= op het beginscherm zetten ================= */
   // Een browser installeert nooit zonder een tik van de gebruiker. Wij tonen alleen een
-  // briefje: op Android met een knop (beforeinstallprompt), op iOS met de uitleg via Delen.
+  // briefje met de weg ernaartoe:
+  // - Android: meteen een uitleg via het menu van de browser (Chrome, Samsung Internet,
+  //   Firefox ...). Chrome meldt pas na wat gebruik (een tik en ongeveer 30 seconden) dat
+  //   installeren kan (beforeinstallprompt); dan wordt het briefje een knop.
+  // - iOS: de uitleg via Delen.
+  // - De ingebouwde browser van WhatsApp, Facebook, Instagram ...: eerst openen in de browser.
   const installeer = $('installeer');
   const installTitel = $('installTitel');
   const installUitleg = $('installUitleg');
@@ -1278,7 +1283,12 @@
   const ua = navigator.userAgent || '';
   const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const iosAndereBrowser = isIOS && /CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
-  let installModus = null;     // 'knop' (Android e.a.) of 'ios'
+  const isAndroid = /Android/i.test(ua);
+  const isSamsung = /SamsungBrowser/.test(ua);
+  // ingebouwde browsers van apps: daar kan je niets op het beginscherm zetten
+  const inApp = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|Line\/|Snapchat|TikTok|musical_ly|BytedanceWebview|LinkedInApp|Pinterest|Twitter/.test(ua)
+    || (isAndroid && /; wv\)/.test(ua));
+  let installModus = null;     // 'knop', 'ios', 'android', 'samsung' of 'inapp'
   let installEvent = null;
 
   function isStandalone() {
@@ -1312,18 +1322,62 @@
     svg.appendChild(pad);
     return svg;
   }
+  // het menuknopje van de browser zoals het eruitziet: ⋮ (Chrome, Firefox, apps op Android),
+  // ≡ (Samsung Internet) of ⋯ (apps op de iPhone)
+  function menuIcoon(soort) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '17');
+    svg.setAttribute('height', '17');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', t('install.menuname'));
+    svg.setAttribute('class', 'deel-icoon');
+    if (soort === 'lijnen') {
+      const pad = document.createElementNS(ns, 'path');
+      pad.setAttribute('d', 'M5 7h14M5 12h14M5 17h14');
+      pad.setAttribute('fill', 'none');
+      pad.setAttribute('stroke', 'currentColor');
+      pad.setAttribute('stroke-width', '2');
+      pad.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(pad);
+    } else {
+      const liggend = soort === 'liggend';
+      for (const d of [-6, 0, 6]) {
+        const c = document.createElementNS(ns, 'circle');
+        c.setAttribute('cx', String(liggend ? 12 + d : 12));
+        c.setAttribute('cy', String(liggend ? 12 : 12 + d));
+        c.setAttribute('r', '1.9');
+        c.setAttribute('fill', 'currentColor');
+        svg.appendChild(c);
+      }
+    }
+    return svg;
+  }
+  // tekst met één {plaatshouder} die een icoontje wordt
+  function metIcoon(tekst, sleutel, svg) {
+    const delen = tekst.split('{' + sleutel + '}');
+    installUitleg.append(document.createTextNode(delen[0] || ''), svg, document.createTextNode(delen[1] || ''));
+  }
   function vulInstall() {
     installTitel.textContent = t('install.title');
     installKnop.textContent = t('install.button');
     installDicht.setAttribute('aria-label', t('install.close'));
     installDicht.title = t('install.close');
     installKnop.hidden = installModus !== 'knop';
-    installUitleg.hidden = installModus !== 'ios';
+    installUitleg.hidden = installModus === 'knop';
     installUitleg.textContent = '';
     if (installModus === 'ios') {
-      const delen = t('install.ios').split('{share}');
-      installUitleg.append(document.createTextNode(delen[0] || ''), deelIcoon(), document.createTextNode(delen[1] || ''));
+      metIcoon(t('install.ios'), 'share', deelIcoon());
       if (iosAndereBrowser) installUitleg.append(document.createTextNode(' ' + t('install.safari')));
+    } else if (installModus === 'samsung') {
+      metIcoon(t('install.samsung'), 'menu', menuIcoon('lijnen'));
+    } else if (installModus === 'android') {
+      metIcoon(t('install.menu'), 'menu', menuIcoon('staand'));
+      // in een tabblad dat WhatsApp of Gmail opent staat "installeren" niet in het menu
+      installUitleg.append(document.createTextNode(' ' + t('install.notthere')));
+    } else if (installModus === 'inapp') {
+      metIcoon(t('install.inapp'), 'menu', menuIcoon(isIOS ? 'liggend' : 'staand'));
     }
   }
   function pasLijstRuimteAan() {
@@ -1332,6 +1386,7 @@
   }
   function toonInstall(modus) {
     if (!isTelefoonOfTablet() || isStandalone() || onlangsGesloten()) return;
+    if (installModus === 'knop' && modus !== 'knop') return;   // de knop is altijd beter
     installModus = modus;
     vulInstall();
     installeer.hidden = false;
@@ -1347,6 +1402,15 @@
     installEvent = e;
     toonInstall('knop');
   });
+  // Al geïnstalleerd en toch in de browser geopend? (Chrome op Android kan dat vertellen
+  // via related_applications in het manifest.)
+  async function alGeinstalleerd() {
+    try {
+      if (!navigator.getInstalledRelatedApps) return false;
+      const apps = await navigator.getInstalledRelatedApps();
+      return Array.isArray(apps) && apps.length > 0;
+    } catch { return false; }
+  }
   window.addEventListener('appinstalled', () => { installEvent = null; verbergInstall(); });
   try {
     window.matchMedia('(display-mode: standalone)').addEventListener('change', () => { if (isStandalone()) verbergInstall(); });
@@ -1363,7 +1427,11 @@
     opslag.schrijf(K_INSTALL, String(Date.now()));
     verbergInstall();
   });
-  if (isIOS) toonInstall('ios');
+  if (isIOS) toonInstall(inApp ? 'inapp' : 'ios');
+  else if (isAndroid) {
+    toonInstall(inApp ? 'inapp' : (isSamsung ? 'samsung' : 'android'));
+    alGeinstalleerd().then((ja) => { if (ja && installModus !== 'knop') verbergInstall(); });
+  }
 
   /* ================= start ================= */
   meetLijn();

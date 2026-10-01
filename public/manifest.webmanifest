@@ -49,5 +49,12 @@
       "form_factor": "narrow",
       "label": "Your pages in a small yellow notebook"
     }
-  ]
+  ],
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://notitieboekje.vanali.workers.dev/manifest.webmanifest"
+    }
+  ],
+  "prefer_related_applications": false
 }

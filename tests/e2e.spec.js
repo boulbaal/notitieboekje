@@ -821,6 +821,86 @@ test('install note: iOS Safari explains Share, iOS Chrome points to Safari, neve
   await ctx.close();
 });
 
+test('install note on Android: right away with the browser menu, a button once Chrome allows it, in-app browsers say open in the browser', async ({ browser, baseURL }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-390', 'eigen contexten; één keer is genoeg');
+  const telefoon = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce', locale: 'nl-BE' };
+  const chrome = 'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
+  const samsung = 'Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36';
+  const facebook = 'Mozilla/5.0 (Linux; Android 14; SM-S911B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0.0.0;]';
+  const instagramIOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0.0.0 (iPhone15,3; iOS 18_0; nl_BE)';
+
+  // Chrome op Android: meteen de uitleg via ⋮, zonder te wachten op Chrome
+  let ctx = await browser.newContext({ ...telefoon, userAgent: chrome });
+  let p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installeer')).toBeVisible();
+  await expect(p.locator('#installUitleg')).toHaveText('Tik op  en dan op ‘App installeren’ of ‘Toevoegen aan startscherm’. Staat het er niet? Kies eerst ‘Openen in Chrome’ of ‘Openen in browser’.');
+  await expect(p.locator('#installUitleg svg[aria-label="Menu"] circle')).toHaveCount(3);
+  await expect(p.locator('#installKnop')).toBeHidden();
+  // de onderste blaadjes blijven bereikbaar boven het briefje
+  expect(await p.locator('#lijstvak').evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThan(40);
+  // zodra Chrome zegt dat installeren kan: een knop
+  await nepInstallEvent(p);
+  await expect(p.locator('#installKnop')).toBeVisible();
+  await expect(p.locator('#installKnop')).toHaveText('Installeren');
+  await expect(p.locator('#installUitleg')).toBeHidden();
+  // van taal wisselen houdt de knop
+  await p.locator('#taal').selectOption('en');
+  await expect(p.locator('#installKnop')).toHaveText('Install');
+  await ctx.close();
+
+  // Samsung Internet: het menu met drie streepjes
+  ctx = await browser.newContext({ ...telefoon, userAgent: samsung });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installUitleg')).toHaveText('Tik op  en dan op ‘Pagina toevoegen aan’ en ‘Startscherm’.');
+  await expect(p.locator('#installUitleg svg[aria-label="Menu"] path')).toHaveCount(1);
+  await ctx.close();
+
+  // de ingebouwde browser van Facebook op Android
+  ctx = await browser.newContext({ ...telefoon, userAgent: facebook });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installUitleg')).toHaveText('Open deze pagina eerst in je browser: tik op  en kies ‘Openen in browser’.');
+  await ctx.close();
+
+  // de ingebouwde browser van Instagram op de iPhone: ⋯ in plaats van Delen
+  ctx = await browser.newContext({ ...telefoon, userAgent: instagramIOS });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#installUitleg')).toHaveText('Open deze pagina eerst in je browser: tik op  en kies ‘Openen in browser’.');
+  const cy = await p.locator('#installUitleg svg circle').evaluateAll((c) => c.map((e) => e.getAttribute('cy')));
+  expect(cy).toEqual(['12', '12', '12']);
+  await ctx.close();
+
+  // al geïnstalleerd en toch in Chrome geopend: geen briefje
+  ctx = await browser.newContext({ ...telefoon, userAgent: chrome });
+  await ctx.addInitScript(() => { navigator.getInstalledRelatedApps = () => Promise.resolve([{ platform: 'webapp' }]); });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await expect(p.locator('#titel')).toBeVisible();
+  await expect(p.locator('#installeer')).toBeHidden();
+  await ctx.close();
+
+  // gesloten: ook op Android 14 dagen niet
+  ctx = await browser.newContext({ ...telefoon, userAgent: chrome });
+  p = await ctx.newPage();
+  await p.goto(baseURL + '/');
+  await p.locator('#installDicht').click();
+  await p.reload();
+  await expect(p.locator('#titel')).toBeVisible();
+  await expect(p.locator('#installeer')).toBeHidden();
+  await ctx.close();
+});
+
+test('the manifest lets Chrome recognise the installed app (related_applications)', async ({ request }) => {
+  const m = await (await request.get('/manifest.webmanifest')).json();
+  expect(m.related_applications).toEqual([{ platform: 'webapp', url: 'https://notitieboekje.vanali.workers.dev/manifest.webmanifest' }]);
+  expect(m.prefer_related_applications).toBe(false);
+  expect(m.display).toBe('standalone');
+  expect(m.icons.some((i) => i.sizes === '512x512' && i.purpose === 'any')).toBe(true);
+});
+
 /* ---------------- meer: exporteren en importeren ---------------- */
 
 const { maakMemo, VOORBEELD, T } = require('./memo-maker');
