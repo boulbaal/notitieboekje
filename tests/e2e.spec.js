@@ -1200,23 +1200,79 @@ test('layout: no horizontal overflow, pad fits the screen, pocket size on deskto
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test('page flip animation over the top, and none with reduced motion', async ({ page }) => {
+test('the cover turns over the top like bending paper, and not at all with reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await open(page);
+  await nieuwBlad(page, 'Een');
+  await terug(page);
+  await page.evaluate(() => document.getAnimations().forEach((a) => a.finish()));
   await page.locator('#plus').click();
-  const anim = await page.evaluate(() => document.getElementById('begin').getAnimations().map((a) => a.effect.getKeyframes().map((k) => k.transform)));
-  expect(anim.length).toBe(1);
-  expect(anim[0][0]).toContain('rotateX(0deg)');
-  expect(anim[0][1]).toMatch(/rotateX\(\d+deg\)/);
-  expect(await page.evaluate(() => getComputedStyle(document.getElementById('begin')).transformOrigin.split(' ')[1])).toBe('0px');
+  const tijdens = await page.evaluate(() => {
+    const laag = document.querySelector('#bladen > .omslag');
+    if (!laag) return null;
+    const repen = [...laag.querySelectorAll('.reep')];
+    const hoeken = repen.map((r) => r.getAnimations()[0].effect.getKeyframes().map((k) => parseFloat(/rotateX\(([-\d.]+)deg\)/.exec(k.transform)[1])));
+    // halverwege: de onderste reep staat verder dan de bovenste (het papier buigt)
+    const midden = Math.floor(hoeken[0].length * 0.3);
+    return {
+      repen: repen.length,
+      begin: hoeken.map((h) => h[0]),
+      eind: Math.min(...hoeken.map((h) => h[h.length - 1])),
+      buigt: hoeken[hoeken.length - 1][midden] - hoeken[0][midden],
+      origineel: getComputedStyle(document.getElementById('begin')).opacity,
+      ids: document.querySelectorAll('#begin, #lijst, #titel').length,
+      inert: laag.inert,
+      verborgen: laag.getAttribute('aria-hidden'),
+    };
+  });
+  expect(tijdens).not.toBeNull();
+  expect(tijdens.repen).toBeGreaterThanOrEqual(10);
+  expect(tijdens.begin.every((h) => h === 0)).toBe(true);
+  expect(tijdens.eind).toBeGreaterThan(170);
+  expect(tijdens.buigt).toBeGreaterThan(15);
+  expect(tijdens.origineel).toBe('0');
+  expect(tijdens.ids).toBe(3);                 // de kopieën hebben geen id's
+  expect(tijdens.inert).toBe(true);
+  expect(tijdens.verborgen).toBe('true');
+  await expect(page.locator('#tekst')).toBeFocused();   // je kan al typen tijdens het omslaan
   await expect(page.locator('#begin')).toBeHidden();
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(0);
+
   await page.keyboard.type('x');
   await page.locator('#terug').click();
-  expect(await page.evaluate(() => document.getElementById('begin').getAnimations().length)).toBe(1);
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(1);
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(0);
   await expect(page.locator('#blad')).toBeHidden();
+  await expect(page.locator('#begin')).toBeVisible();
+  expect(await page.evaluate(() => document.getElementById('begin').style.opacity)).toBe('');
+
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.locator('#plus').click();
-  expect(await page.evaluate(() => document.getElementById('begin').getAnimations().length)).toBe(0);
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(0);
+  await expect(page.locator('#blad')).toBeVisible();
+});
+
+test('tapping open and back quickly never leaves both pages hidden or the wrong one up', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await open(page);
+  // open en meteen terug, terwijl het omslaan nog loopt
+  await page.locator('#plus').click();
+  await page.locator('#terug').click();
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(0);
+  await expect(page.locator('#begin')).toBeVisible();
+  await expect(page.locator('#blad')).toBeHidden();
+  expect(await page.evaluate(() => document.getElementById('begin').style.opacity)).toBe('');
+  // open, terug, weer open: het blaadje moet open blijven, met de focus erin
+  await page.locator('#plus').click();
+  await page.locator('#terug').click();
+  await page.locator('#plus').click();
+  await expect(page.locator('#bladen > .omslag')).toHaveCount(0);
+  await expect(page.locator('#blad')).toBeVisible();
+  await expect(page.locator('#begin')).toBeHidden();
+  await expect(page.locator('#tekst')).toBeFocused();
+  await page.keyboard.type('Blijft');
+  await terug(page);
+  await expect(page.locator('#lijst .rij')).toHaveText(['Blijft']);
 });
 
 test('the share button uses the universal share icon (three connected dots)', async ({ page }) => {

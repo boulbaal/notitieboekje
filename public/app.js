@@ -610,7 +610,7 @@
     const eind = tekst.value.length;
     try { tekst.setSelectionRange(eind, eind); } catch {}
     tekst.scrollTop = tekst.scrollHeight;
-    slaOm(begin, 'weg', () => { begin.hidden = true; });
+    slaOm(begin, 'weg', () => { if (huidig) begin.hidden = true; });
   }
 
   function bewaar() {
@@ -654,7 +654,7 @@
     const r = id && lijst.querySelector('li[data-id="' + CSS.escape(id) + '"] .rij');
     if (r) r.focus({ preventScroll: true }); else plus.focus({ preventScroll: true });
     if (tekst === document.activeElement) tekst.blur();
-    slaOm(begin, 'terug', () => { blad.hidden = true; tekst.value = ''; probeerUpdateHerladen(); });
+    slaOm(begin, 'terug', () => { if (huidig) return; blad.hidden = true; tekst.value = ''; probeerUpdateHerladen(); });
   }
   let terugViaHistorie = false;
   window.addEventListener('popstate', () => {
@@ -666,23 +666,203 @@
   plus.addEventListener('click', () => openBlad(null));
 
   /* ================= omslaan over de bovenkant ================= */
-  // Een reportersblokje slaat je naar boven om: de pagina draait rond de spiraal.
-  let lopend = null;
+  // De kaft slaat om over de spiraal zoals echt papier: ze buigt. Bij het openen
+  // gaat de onderrand voorop en krult naar je toe; bij het terugvallen hangt de
+  // onderrand wat achter en landt de pagina zacht. Voorbij de rechte stand zie je
+  // de achterkant van de kaft.
+  // Hoe: een kopie van de pagina in horizontale repen knippen en elke reep op een
+  // gebogen lijn zetten (zijaanzicht van het papier). Alles als Web Animations met
+  // vooraf berekende sleutelbeelden, zodat het ook vloeiend blijft terwijl het
+  // toetsenbord opkomt.
+  const OMSLAG = {
+    weg:   { ms: 760, eind: 182, krul: 70 },
+    terug: { ms: 660, eind: 182, krul: 60 },
+  };
+  const PERSPECTIEF = 2200;
+  let lopend = null;   // { finish() }
+
+  const glad = (x) => x * x * (3 - 2 * x);
+  // stand van de pagina op tijdstip t (0..1): hoek aan de spiraal en extra buiging aan de onderrand
+  function stand(richting, t) {
+    const o = OMSLAG[richting];
+    if (richting === 'weg') {
+      // eerst rustig optillen (de onderrand komt los en krult naar je toe),
+      // rond 70% van de tijd staat de pagina recht, daarna vlot over de top
+      const h = o.eind * glad(Math.pow(t, 1.5));
+      const c = o.krul * Math.sin(Math.PI * Math.min(1, t * 1.05)) * (1 - 0.3 * t);
+      return { h, c };
+    }
+    // terug: komt over de top, valt, de onderrand hangt achter, zachte landing
+    const u = 1 - Math.pow(1 - t, 1.35);
+    const h = o.eind * (1 - glad(u));
+    const c = o.krul * Math.sin(Math.PI * Math.min(1, t * 1.08)) * (1 - 0.2 * t);
+    return { h, c };
+  }
+
+  // licht valt van boven-voor op het papier: (0, -0.5, 1). Het deel dat net naar je
+  // toe krult vangt meer licht (glans), wat schuiner staat wordt donkerder.
+  const LICHT = Math.hypot(0.5, 1);
+  const VLAK = 1 / LICHT;
+  function belichting(th) {
+    const r = th * Math.PI / 180;
+    const voor = th <= 90;
+    const d = (0.5 * Math.sin(r) + Math.cos(r)) / LICHT;   // normaal (0, -sin, cos)
+    if (voor) {
+      const v = d - VLAK;
+      return { donker: v < 0 ? Math.min(0.5, -v * 0.9) : 0, glans: v > 0 ? Math.min(0.22, v * 2.2) : 0 };
+    }
+    // achterkant: normaal (0, sin, -cos), licht van voren komt er schuin op
+    const a = Math.max(0, (-0.5 * Math.sin(r) - Math.cos(r)) / LICHT);
+    return { donker: 0.06 + 0.22 * (1 - a), glans: 0 };
+  }
+
+  // zijaanzicht: per reep de hoek, en waar de bovenrand van de reep komt (y omlaag, z naar je toe)
+  function buig(randen, h, c) {
+    const L = randen[randen.length - 1];
+    const uit = [];
+    let y = 0, z = 0;
+    for (let i = 0; i < randen.length - 1; i++) {
+      const s0 = randen[i], s1 = randen[i + 1];
+      const m = (s0 + s1) / 2 / L;
+      const th = Math.min(h + c * m * m, OMSLAG.weg.eind + 4);
+      uit.push({ s0, y, z, th });
+      const r = th * Math.PI / 180;
+      y += (s1 - s0) * Math.cos(r);
+      z += (s1 - s0) * Math.sin(r);
+    }
+    uit.eind = { y, z, th: uit[uit.length - 1].th };
+    return uit;
+  }
+
+  // een kopie van de pagina zonder id's en zonder de rijen die toch niet in beeld staan
+  function kopieVan(pagina) {
+    const k = pagina.cloneNode(true);
+    k.removeAttribute('id');
+    k.classList.remove('boven');
+    k.style.opacity = '';
+    for (const e of k.querySelectorAll('[id]')) e.removeAttribute('id');
+    const vak = pagina.querySelector('.lijstvak');
+    const kVak = k.querySelector('.lijstvak');
+    const kLijst = k.querySelector('.lijst');
+    let scroll = 0;
+    if (vak && kVak && kLijst) {
+      scroll = vak.scrollTop;
+      const onder = scroll + vak.clientHeight;
+      const rijen = pagina.querySelectorAll('.lijst > li');
+      const kRijen = kLijst.children;
+      let boven = 0;
+      for (let i = rijen.length - 1; i >= 0; i--) {
+        const r = rijen[i];
+        const zicht = r.offsetTop + r.offsetHeight > scroll && r.offsetTop < onder;
+        if (!zicht) { if (r.offsetTop < scroll) boven = Math.max(boven, r.offsetTop + r.offsetHeight); kRijen[i].remove(); }
+      }
+      kLijst.style.paddingTop = boven + 'px';
+    }
+    return { k, scroll };
+  }
+
   function slaOm(pagina, richting, klaar) {
-    if (lopend) { try { lopend.finish(); } catch {} lopend = null; }
+    if (lopend) { lopend.finish(); lopend = null; }
     const af = () => { pagina.classList.remove('boven'); klaar && klaar(); };
     if (!beweging() || !pagina.animate) { af(); return; }
-    pagina.classList.add('boven');
-    const plat = { transform: 'rotateX(0deg)', filter: 'brightness(1)' };
-    const op = { transform: 'rotateX(118deg)', filter: 'brightness(.82)' };
-    const kf = richting === 'weg' ? [plat, op] : [op, plat];
-    const a = pagina.animate(kf, {
-      duration: 460,
-      easing: richting === 'weg' ? 'cubic-bezier(.45,.05,.75,.6)' : 'cubic-bezier(.2,.5,.35,1)',
-    });
-    lopend = a;
-    a.onfinish = () => { if (lopend === a) lopend = null; af(); };
-    a.oncancel = () => { if (lopend === a) lopend = null; af(); };
+
+    const o = OMSLAG[richting];
+    const L = bladen.clientHeight;
+    const B = bladen.clientWidth;
+    if (!L || !B) { af(); return; }
+
+    // de repen: kleiner onderaan, daar buigt het papier het meest
+    const n = Math.max(10, Math.min(16, Math.round(L / 48)));
+    const randen = [];
+    for (let i = 0; i <= n; i++) randen.push(Math.round(L * (1 - Math.pow(1 - i / n, 1.35))));
+
+    const laag = document.createElement('div');
+    laag.className = 'omslag';
+    laag.setAttribute('aria-hidden', 'true');
+    laag.inert = true;
+    laag.style.height = L + 'px';   // vast: het toetsenbord mag de pagina niet halverwege kleiner maken
+
+    const schaduw = document.createElement('div');
+    schaduw.className = 'omslag-schaduw';
+    laag.appendChild(schaduw);
+
+    const { k: sjabloon, scroll } = kopieVan(pagina);
+    const repen = [];
+    for (let i = 0; i < n; i++) {
+      const reep = document.createElement('div');
+      reep.className = 'reep';
+      const boven = Math.max(0, randen[i] - 0.75);
+      const onder = Math.max(0, L - randen[i + 1] - 0.75);
+      reep.style.clipPath = 'inset(' + boven + 'px 0 ' + onder + 'px 0)';
+      reep.style.transformOrigin = '50% ' + randen[i] + 'px';
+      const k = i === n - 1 ? sjabloon : sjabloon.cloneNode(true);
+      const licht = document.createElement('div');
+      licht.className = 'reep-licht';
+      const achter = document.createElement('div');
+      achter.className = 'reep-achter';
+      const glans = document.createElement('div');
+      glans.className = 'reep-glans';
+      reep.append(k, achter, licht, glans);
+      laag.appendChild(reep);
+      repen.push({ reep, k, licht, achter, glans });
+    }
+    bladen.appendChild(laag);
+    for (const r of repen) { const v = r.k.querySelector('.lijstvak'); if (v) v.scrollTop = scroll; }
+    pagina.style.opacity = '0';
+
+    // sleutelbeelden
+    const K = 40;
+    const kf = repen.map(() => ({ reep: [], licht: [], achter: [], glans: [] }));
+    const kfSchaduw = [];
+    const oy = L * 0.3;
+    for (let j = 0; j <= K; j++) {
+      const t = j / K;
+      const { h, c } = stand(richting, t);
+      const vorm = buig(randen, h, c);
+      for (let i = 0; i < n; i++) {
+        const { s0, y, z, th } = vorm[i];
+        const voor = th <= 90;
+        const b = belichting(th);
+        kf[i].reep.push({ offset: t, transform: 'translate3d(0,' + (y - s0).toFixed(2) + 'px,' + z.toFixed(2) + 'px) rotateX(' + th.toFixed(2) + 'deg)' });
+        kf[i].licht.push({ offset: t, opacity: b.donker.toFixed(3) });
+        kf[i].glans.push({ offset: t, opacity: b.glans.toFixed(3) });
+        // voor- of achterkant: meteen omschakelen, niet half doorschijnend
+        kf[i].achter.push({ offset: t, opacity: voor ? 0 : 1, easing: 'step-start' });
+      }
+      // schaduw van de opgetilde onderrand op het blaadje eronder
+      const e = vorm.eind;
+      const yProj = oy + (e.y - oy) * PERSPECTIEF / Math.max(400, PERSPECTIEF - e.z);
+      const hoek = Math.min(e.th, 180) * Math.PI / 180;
+      kfSchaduw.push({
+        offset: t,
+        transform: 'translateY(' + Math.max(-40, Math.min(L, yProj)).toFixed(1) + 'px)',
+        opacity: (0.55 * Math.sin(hoek / 2) * (1 - t * 0.6) * (e.th > 178 ? 0 : 1)).toFixed(3),
+      });
+    }
+    const opties = { duration: o.ms, easing: 'linear', fill: 'both' };
+    const anims = [];
+    for (let i = 0; i < n; i++) {
+      anims.push(repen[i].reep.animate(kf[i].reep, opties));
+      anims.push(repen[i].licht.animate(kf[i].licht, opties));
+      anims.push(repen[i].achter.animate(kf[i].achter, opties));
+      anims.push(repen[i].glans.animate(kf[i].glans, opties));
+    }
+    anims.push(schaduw.animate(kfSchaduw, opties));
+
+    const ctrl = {
+      klaar: false,
+      finish() {
+        if (ctrl.klaar) return;
+        ctrl.klaar = true;
+        for (const a of anims) { try { a.cancel(); } catch {} }
+        laag.remove();
+        pagina.style.opacity = '';
+        if (lopend === ctrl) lopend = null;
+        af();
+      },
+    };
+    lopend = ctrl;
+    anims[0].onfinish = () => ctrl.finish();
   }
 
   /* ================= bewaren bij weggaan ================= */
