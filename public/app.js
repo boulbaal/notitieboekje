@@ -287,7 +287,8 @@
     svg.appendChild(pad);
     return svg;
   }
-  const ICOON_DELEN = 'M8.5 9.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-1.5M12 3v11.5M8.5 6.5 12 3l3.5 3.5';
+  // het algemene deelicoon: drie bolletjes met twee lijntjes
+  const ICOON_DELEN = 'M20.5 5.5a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0ZM9 12a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0ZM20.5 18.5a2.75 2.75 0 1 1-5.5 0a2.75 2.75 0 1 1 5.5 0ZM8.6 10.65l6.8-3.8M8.6 13.35l6.8 3.8';
   const ICOON_WEG = 'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-12.5M10.5 11v6M13.5 11v6';
   const ICOON_MEER = 'M5 12h.01M12 12h.01M19 12h.01';
 

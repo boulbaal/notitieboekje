@@ -1219,6 +1219,15 @@ test('page flip animation over the top, and none with reduced motion', async ({ 
   expect(await page.evaluate(() => document.getElementById('begin').getAnimations().length)).toBe(0);
 });
 
+test('the share button uses the universal share icon (three connected dots)', async ({ page }) => {
+  await open(page);
+  await nieuwBlad(page, 'Delen');
+  await terug(page);
+  const d = await page.locator('#lijst li .actie.delen svg path').getAttribute('d');
+  expect((d.match(/a2\.75 2\.75/g) || []).length).toBe(6);   // drie bolletjes, elk twee bogen
+  expect((d.match(/M8\.6 1[03]\.\d+l6\.8/g) || []).length).toBe(2);   // twee lijntjes ertussen
+});
+
 test('the cover is a deeper yellow than the paper, with readable text', async ({ page }) => {
   await open(page);
   const k = await page.evaluate(() => {
